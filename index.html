@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v15</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v16</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -266,6 +266,7 @@
     </div>
     <div class="field">
       <label>アシスタント機能</label>
+      <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="geoOn"> 📍 位置情報を使う(近くの店・天気・現在地に賢く回答)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="svFullOn" checked> 🌟 会話の本文も特別ボイスで話す(上限時は内蔵声に自動切替)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="handsFree" checked> ハンズフリー会話(返答後、自動で聞き取り再開)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="searchOn"> Google検索で最新情報に答える(ニュース・天気など)</label>
@@ -399,7 +400,51 @@ const store = {
   set fxwet(v) { localStorage.setItem("jv_fxwet", String(v)); },
   get fxfreq() { return parseFloat(localStorage.getItem("jv_fxfreq") || "90"); },
   set fxfreq(v) { localStorage.setItem("jv_fxfreq", String(v)); },
+  get geo() { return localStorage.getItem("jv_geo") === "1"; },
+  set geo(v) { localStorage.setItem("jv_geo", v ? "1" : "0"); },
 };
+
+/* ---------------- 位置情報(高度アシスタント化) ---------------- */
+let geoCache = null; // {ts, lat, lon, label}
+let geoDeniedNotice = false;
+function getGeo(maxAgeMin) {
+  return new Promise((resolve) => {
+    if (!store.geo || !navigator.geolocation) { resolve(null); return; }
+    if (geoCache && Date.now() - geoCache.ts < (maxAgeMin || 10) * 60000) { resolve(geoCache); return; }
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const lat = pos.coords.latitude, lon = pos.coords.longitude;
+      let label = "";
+      try {
+        const r = await fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=ja", { signal: AbortSignal.timeout(6000) });
+        const j = await r.json();
+        label = [j.principalSubdivision, j.city, j.locality].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join("");
+      } catch (e) {}
+      geoCache = { ts: Date.now(), lat, lon, label };
+      resolve(geoCache);
+    }, () => {
+      if (!geoDeniedNotice) { geoDeniedNotice = true; addMsg("sys", "📍 位置情報が取得できませんでした(許可設定を確認してください)。位置なしで続けます。"); }
+      resolve(null);
+    }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
+  });
+}
+const WMO = { 0:"快晴",1:"晴れ",2:"晴れ時々くもり",3:"くもり",45:"霧",48:"霧",51:"弱い霧雨",53:"霧雨",55:"強い霧雨",61:"小雨",63:"雨",65:"強い雨",66:"みぞれ",67:"みぞれ",71:"小雪",73:"雪",75:"大雪",77:"雪",80:"にわか雨",81:"にわか雨",82:"激しいにわか雨",85:"にわか雪",86:"にわか雪",95:"雷雨",96:"雷雨",99:"激しい雷雨" };
+async function localWeather() {
+  const g = await getGeo(10);
+  if (!g) return null;
+  try {
+    const u = "https://api.open-meteo.com/v1/forecast?latitude=" + g.lat + "&longitude=" + g.lon
+      + "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1";
+    const r = await fetch(u, { signal: AbortSignal.timeout(7000) });
+    const j = await r.json();
+    const cur = j.current, d = j.daily;
+    const wx = WMO[cur.weather_code] || "";
+    const pop = d.precipitation_probability_max[0];
+    let msg = "スキャンしました。" + (g.label ? g.label + "は" : "現在地は") + "今" + Math.round(cur.temperature_2m) + "度、" + wx + "です。"
+      + "今日は最高" + Math.round(d.temperature_2m_max[0]) + "度、最低" + Math.round(d.temperature_2m_min[0]) + "度、降水確率" + pop + "パーセント。";
+    msg += pop >= 50 ? "傘を持って出かけてくださいね。" : pop >= 30 ? "念のため折りたたみ傘があると安心ですよ。" : "良い一日になりそうですよ。";
+    return msg;
+  } catch (e) { return null; }
+}
 
 /* ロボット質感エフェクト(前作PC版のリング変調を移植)
    声サーバー(VOICEVOX)と特別ボイスの再生に、ほのかな機械変調をかける */
@@ -881,6 +926,9 @@ function sysPromptNow() {
   if (t && t.sys) s += "\n" + t.sys;
   const p = store.profile;
   if (p.length) s += "\nユーザーについて覚えていること:\n- " + p.join("\n- ");
+  if (store.geo && geoCache && Date.now() - geoCache.ts < 15 * 60000) {
+    s += "\nユーザーの現在地: " + (geoCache.label || "不明") + " (緯度" + geoCache.lat.toFixed(4) + ", 経度" + geoCache.lon.toFixed(4) + ")。「近くの◯◯」を聞かれたらこの現在地を前提にGoogle検索して答えてください。";
+  }
   return s;
 }
 /* ひらがな→カタカナ正規化(ウェイクワード・エコー判定用) */
@@ -946,7 +994,7 @@ function brainConfig() {
 }
 /* ---------------- ローカルハンドラ(Geminiを呼ばずに即答) ---------------- */
 let timerObjs = [];
-function localHandle(text) {
+async function localHandle(text) {
   const t = text.trim();
   // 記憶(プロファイル)
   if (/記憶を(消して|リセット|クリア)|全部忘れて/.test(t)) {
@@ -960,6 +1008,16 @@ function localHandle(text) {
       const p = store.profile; p.push(content); store.profile = p.slice(-30);
       return "スキャンしました。「" + content + "」ですね。覚えておきます。";
     }
+  }
+  // 天気(位置情報ON時はGemini無料枠を使わず即答)
+  if (/(今日|明日|いま|今)?の?天気/.test(t) && store.geo) {
+    const w = await localWeather();
+    if (w) return w;
+  }
+  // 現在地
+  if (/(今|いま)どこ|現在地|ここはどこ/.test(t) && store.geo) {
+    const g = await getGeo(5);
+    if (g && g.label) return "スキャンしました。現在地は" + g.label + "のあたりです。";
   }
   // 時刻・日付
   if (/(今|いま)何時|何時ですか/.test(t)) {
@@ -1028,7 +1086,7 @@ async function sendToClaude(userText) {
   stopRecognition();
   addMsg("user", userText);
   // ローカルハンドラ(時刻・タイマー・計算・記憶は即答)
-  const local = localHandle(userText);
+  const local = await localHandle(userText);
   if (local !== null) {
     history.push({ role: "user", content: userText }, { role: "assistant", content: local });
     if (history.length > 30) history = history.slice(-30);
@@ -1498,6 +1556,7 @@ function updateMicUI() {
   $("orbWrap").classList.toggle("on", sessionOn);
 }
 function startSession() {
+  if (store.geo) getGeo(10); // 位置を裏で更新(会話は待たせない)
   if (store.engine === "realtime") { startRealtimeSession(); return; }
   if (!SR) { toast("このブラウザは音声認識に未対応です。PC版Chromeをご利用ください。", 5000); return; }
   ensureAudio();
@@ -1642,6 +1701,15 @@ $("voiceSel").addEventListener("change", () => {
   ttsFinish(() => {});
 });
 $("toneSel").addEventListener("change", () => { store.tone = $("toneSel").value; });
+$("geoOn").addEventListener("change", async () => {
+  store.geo = $("geoOn").checked;
+  if (store.geo) {
+    toast("位置情報の許可を確認しています…");
+    geoCache = null;
+    const g = await getGeo(0);
+    if (g) toast("📍 現在地を取得しました" + (g.label ? "(" + g.label + ")" : ""), 4000);
+  }
+});
 $("vvSpeaker").addEventListener("change", () => {
   if ($("vvSpeaker").value === "__baymax__") { $("baymaxVoiceBtn").click(); return; } // ベイマックス一括設定
   store.speaker = $("vvSpeaker").value;
@@ -1672,6 +1740,7 @@ function applySettings() {
   store.search = $("searchOn").checked;
   store.bargein = $("bargeinOn").checked;
   store.svfull = $("svFullOn").checked;
+  store.geo = $("geoOn").checked;
   store.name = $("userName").value.trim() || "ご主人様";
   store.sys = $("sysPrompt").value.trim() || DEFAULT_SYS;
   if ($("vvSpeaker").value) store.speaker = $("vvSpeaker").value;
@@ -1859,6 +1928,7 @@ function initSettingsUI() {
   $("searchOn").checked = store.search;
   $("bargeinOn").checked = store.bargein;
   $("svFullOn").checked = store.svfull;
+  $("geoOn").checked = store.geo;
   $("memCount").textContent = store.profile.length;
   updateEngineUI();
   $("userName").value = store.name;
