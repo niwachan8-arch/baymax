@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v17</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v18</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -271,7 +271,8 @@
       <select id="proFreq" style="margin-bottom:8px;">
         <option value="low">控えめ(朝の挨拶・雨アラート・休憩の声かけのみ)</option>
         <option value="mid">普通(+ 90分に一度くらい雑談)</option>
-        <option value="high">おしゃべり(+ 40分に一度くらい雑談)</option>
+        <option value="high">おしゃべり(+ 40分に一度くらい)</option>
+        <option value="max">パートナー(+ 15分に一度、プッシュ型のおすすめ情報)</option>
       </select>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="svFullOn" checked> 🌟 会話の本文も特別ボイスで話す(上限時は内蔵声に自動切替)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="handsFree" checked> ハンズフリー会話(返答後、自動で聞き取り再開)</label>
@@ -1081,7 +1082,7 @@ async function localHandle(text) {
 }
 
 /* ---------------- Gemini呼び出し(4段フォールバックチェーン) ---------------- */
-const GEMINI_CHAIN = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite"];
+const GEMINI_CHAIN = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemma-3-27b-it", "gemma-3-12b-it"];
 let lastResponseText = "";
 
 async function sendToClaude(userText) {
@@ -1124,17 +1125,32 @@ async function sendToClaude(userText) {
     const chain = Array.from(new Set([store.gmodel || "gemini-2.5-flash"].concat(GEMINI_CHAIN)));
     const attempts = [];
     for (const mm of chain) {
-      if (store.search) attempts.push({ model: mm, tools: true });
+      const isGemma = mm.startsWith("gemma");
+      if (store.search && !isGemma) attempts.push({ model: mm, tools: true });
       attempts.push({ model: mm, tools: false });
     }
     let res = null, lastErr = null, cfg = null;
-    for (const at of attempts.slice(0, 8)) {
-      const body = {
-        system_instruction: { parts: [{ text: sysPromptNow() }] },
-        contents: history.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
-        generationConfig: { maxOutputTokens: 1024 },
-      };
-      if (at.tools) body.tools = [{ google_search: {} }];
+    for (const at of attempts.slice(0, 12)) {
+      const isGemma = at.model.startsWith("gemma");
+      const msgs = history.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+      let body;
+      if (isGemma) {
+        // Gemmaはsystem_instruction非対応 → 人格設定を会話の先頭に差し込む
+        body = {
+          contents: [
+            { role: "user", parts: [{ text: sysPromptNow() + "\n(以上の設定・口調に厳密に従って応答してください)" }] },
+            { role: "model", parts: [{ text: "承知しました。" }] },
+          ].concat(msgs),
+          generationConfig: { maxOutputTokens: 1024 },
+        };
+      } else {
+        body = {
+          system_instruction: { parts: [{ text: sysPromptNow() }] },
+          contents: msgs,
+          generationConfig: { maxOutputTokens: 1024 },
+        };
+        if (at.tools) body.tools = [{ google_search: {} }];
+      }
       cfg = {
         url: "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(at.model)
              + ":streamGenerateContent?alt=sse&key=" + encodeURIComponent(store.gkey),
@@ -1225,6 +1241,18 @@ async function sendToClaude(userText) {
     if (err.name === "AbortError") { setState(S.IDLE); return; }
     aiDiv.remove();
     history.pop();
+    if (/上限|quota|RESOURCE_EXHAUSTED|429/i.test(err.message)) {
+      // 無料枠の全滅時も沈黙しない: 声で状況を伝えて会話ループは維持
+      const msg = "申し訳ありません。考える力の無料枠が、いま一時的に上限のようです。1分ほど待ってから、もう一度話しかけてくださいね。時刻やタイマー、天気は、このままお答えできますよ。";
+      addMsg("ai", msg);
+      lastResponseText = msg;
+      setMood("sad", 4000);
+      ttsReset();
+      setState(S.SPEAKING);
+      ttsEnqueue(msg);
+      ttsFinish(() => afterResponse());
+      return;
+    }
     addMsg("sys", "⚠ " + err.message);
     setMood("sad", 3500);
     toast(err.message, 5000);
@@ -1609,21 +1637,44 @@ async function rainSoon() {
 
 async function proactiveChat() {
   if (!store.gkey) return null;
-  try {
-    const body = {
-      system_instruction: { parts: [{ text: sysPromptNow() + "\n【指示】いまあなたから自発的に話しかける一言を生成してください(2文以内)。時刻・現在地・記憶・直近の会話を踏まえ、体調の気遣い/ちょっとした豆知識/軽い雑談/さりげないリマインドのどれか一つ。「おはよう」等の挨拶や同じ話題の繰り返しは避けること。" }] },
-      contents: history.slice(-6).map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-        .concat([{ role: "user", parts: [{ text: "(自発的な一言をどうぞ)" }] }]),
-      generationConfig: { maxOutputTokens: 200 },
-    };
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=" + encodeURIComponent(store.gkey), {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    });
-    if (!r.ok) return null;
-    const j = await r.json();
-    const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
-    return parts ? parts.map(p => p.text || "").join("").trim() : null;
-  } catch (e) { return null; }
+  // いまこの瞬間の状況を収集(現在地・天気・時刻)
+  let ctx = "";
+  const d = new Date();
+  ctx += "現在時刻: " + "日月火水木金土"[d.getDay()] + "曜日 " + d.getHours() + "時" + d.getMinutes() + "分\n";
+  if (store.geo) {
+    const g = await getGeo(20);
+    if (g && g.label) ctx += "現在地: " + g.label + " (緯度" + g.lat.toFixed(4) + ", 経度" + g.lon.toFixed(4) + ")\n";
+    const w = await localWeather();
+    if (w) ctx += "天気: " + w.replace("スキャンしました。", "") + "\n";
+  }
+  const sys = sysPromptNow()
+    + "\n【役割】あなたはプッシュ型の情報パートナーでもあります。いまこの瞬間のオーナーに役立つ・嬉しい情報を、自分から一言プッシュしてください(2〜3文以内・音声向け)。"
+    + "\n【いまの状況】\n" + ctx
+    + "【ネタの例】現在地の近くの評判の店やスポット(Google検索で実在を確認してから)、今の時間帯に合う提案(昼食・休憩・帰り道・散歩)、天気を踏まえた行動提案、直近の会話の続きや関連する新情報、記憶にある予定・好みに基づくリマインドや提案、現在地周辺の今日の出来事。"
+    + "\n【禁止】挨拶だけで終わる、直近の自発発話と同じ話題、曖昧な一般論。固有名詞を使って具体的に。";
+  const contents = history.slice(-8).map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
+    .concat([{ role: "user", parts: [{ text: "(いまの状況に合うおすすめ情報を1つ、プッシュしてください)" }] }]);
+  // フォールバック: flash-lite+検索 → flash-lite → flash+検索 → flash
+  const attempts = [];
+  for (const mdl of ["gemini-2.5-flash-lite", "gemini-2.5-flash"]) {
+    if (store.search) attempts.push({ mdl, tools: true });
+    attempts.push({ mdl, tools: false });
+  }
+  for (const at of attempts) {
+    try {
+      const body = { system_instruction: { parts: [{ text: sys }] }, contents, generationConfig: { maxOutputTokens: 350 } };
+      if (at.tools) body.tools = [{ google_search: {} }];
+      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + at.mdl + ":generateContent?key=" + encodeURIComponent(store.gkey), {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (!r.ok) continue;
+      const j = await r.json();
+      const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+      const text = parts ? parts.filter(p => p.text).map(p => p.text).join("").trim() : "";
+      if (text) return text;
+    } catch (e) {}
+  }
+  return null;
 }
 
 async function proactiveTick() {
@@ -1660,7 +1711,7 @@ async function proactiveTick() {
   }
   if (proTimes.care === 0) proTimes.care = now; // 初回は起点だけ記録
   // 4) 自発的な雑談(Gemini・頻度設定に応じて)
-  const chatGapMin = store.profreq === "high" ? 40 : store.profreq === "low" ? 0 : 90;
+  const chatGapMin = store.profreq === "max" ? 15 : store.profreq === "high" ? 40 : store.profreq === "low" ? 0 : 90;
   if (chatGapMin > 0 && now - proTimes.chat > chatGapMin * 60 * 1000) {
     proTimes.chat = now;
     const line = await proactiveChat();
