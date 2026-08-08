@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v19</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v20</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -1084,6 +1084,38 @@ async function localHandle(text) {
 
 /* ---------------- Gemini呼び出し(4段フォールバックチェーン) ---------------- */
 const GEMINI_CHAIN = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemma-3-27b-it", "gemma-3-12b-it"];
+
+/* 会話履歴をAPI用に整形: 同じ話者の連続発言を結合してuser/modelの交互構造を保証
+   (自発モードでベイマックスの発言が連続すると、この整形なしではAPIが400を返す) */
+function toContents(msgs) {
+  const out = [];
+  for (const m of msgs) {
+    const role = m.role === "assistant" ? "model" : "user";
+    if (out.length && out[out.length - 1].role === role) {
+      out[out.length - 1].parts[0].text += "\n" + m.content;
+    } else {
+      out.push({ role, parts: [{ text: m.content }] });
+    }
+  }
+  // 先頭がmodelの場合はダミーのuserターンを前置(API要件)
+  if (out.length && out[0].role === "model") out.unshift({ role: "user", parts: [{ text: "(会話開始)" }] });
+  return out;
+}
+
+/* キーで実際に使えるモデル一覧を取得し、チェーンを自動調整(1回だけ・失敗時は静的チェーン) */
+let modelListCache = null, modelListTried = false;
+async function availableModels() {
+  if (modelListCache || modelListTried || !store.gkey) return modelListCache;
+  modelListTried = true;
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=" + encodeURIComponent(store.gkey), { signal: AbortSignal.timeout(6000) });
+    if (r.ok) {
+      const j = await r.json();
+      modelListCache = new Set((j.models || []).map(m => (m.name || "").replace("models/", "")));
+    }
+  } catch (e) {}
+  return modelListCache;
+}
 let lastResponseText = "";
 
 async function sendToClaude(userText) {
@@ -1123,17 +1155,22 @@ async function sendToClaude(userText) {
   try {
     // フォールバックチェーン: カスタムモデル → 2.5-flash → 2.5-flash-lite → 2.0-flash → 2.0-flash-lite
     // 各モデルで「検索あり→検索なし」の順に試す(無料枠の上限や不調時に自動で次へ)
-    const chain = Array.from(new Set([store.gmodel || "gemini-2.5-flash"].concat(GEMINI_CHAIN)));
+    let chain = Array.from(new Set([store.gmodel || "gemini-2.5-flash"].concat(GEMINI_CHAIN)));
+    const avail = await availableModels();
+    if (avail && avail.size) {
+      const filtered = chain.filter(m => avail.has(m));
+      if (filtered.length) chain = filtered;
+    }
     const attempts = [];
     for (const mm of chain) {
       const isGemma = mm.startsWith("gemma");
       if (store.search && !isGemma) attempts.push({ model: mm, tools: true });
       attempts.push({ model: mm, tools: false });
     }
-    let res = null, lastErr = null, cfg = null;
+    let res = null, lastErr = null, quotaErr = null, cfg = null;
     for (const at of attempts.slice(0, 12)) {
       const isGemma = at.model.startsWith("gemma");
-      const msgs = history.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+      const msgs = toContents(history);
       let body;
       if (isGemma) {
         // Gemmaはsystem_instruction非対応 → 人格設定を会話の先頭に差し込む
@@ -1169,11 +1206,12 @@ async function sendToClaude(userText) {
       else if (res.status === 429) emsg = "無料枠の上限です。1分ほど待ってからお試しください。";
       else { try { emsg += ": " + ((JSON.parse(errBody).error || {}).message || ""); } catch (e) {} }
       lastErr = new Error(emsg);
+      if (res.status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(errBody)) quotaErr = lastErr;
       const keyBad = res.status === 401 || res.status === 403 || /API key not valid|API_KEY_INVALID/i.test(errBody);
       if (keyBad) { lastErr = new Error("APIキーが無効です。設定を確認してください。"); res = null; break; } // キー不正は即中断
       res = null; // 400/404/429/5xx → 次の候補へ
     }
-    if (!res) throw (lastErr || new Error("接続できませんでした"));
+    if (!res) throw (quotaErr || lastErr || new Error("接続できませんでした")); // 枠切れなら優しい案内を優先
 
     const fullVoice = svFullActive();
     setState(S.SPEAKING, fullVoice ? "返事を考えています…" : undefined);
@@ -1653,8 +1691,12 @@ async function proactiveChat() {
     + "\n【いまの状況】\n" + ctx
     + "【ネタの例】現在地の近くの評判の店やスポット(Google検索で実在を確認してから)、今の時間帯に合う提案(昼食・休憩・帰り道・散歩)、天気を踏まえた行動提案、直近の会話の続きや関連する新情報、記憶にある予定・好みに基づくリマインドや提案、現在地周辺の今日の出来事。"
     + "\n【禁止】挨拶だけで終わる、直近の自発発話と同じ話題、曖昧な一般論。固有名詞を使って具体的に。";
-  const contents = history.slice(-8).map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-    .concat([{ role: "user", parts: [{ text: "(いまの状況に合うおすすめ情報を1つ、プッシュしてください)" }] }]);
+  let contents = toContents(history.slice(-8));
+  if (contents.length && contents[contents.length - 1].role === "user") {
+    contents[contents.length - 1].parts[0].text += "\n(いまの状況に合うおすすめ情報を1つ、プッシュしてください)";
+  } else {
+    contents = contents.concat([{ role: "user", parts: [{ text: "(いまの状況に合うおすすめ情報を1つ、プッシュしてください)" }] }]);
+  }
   // フォールバック: flash-lite+検索 → flash-lite → flash+検索 → flash
   const attempts = [];
   for (const mdl of ["gemini-2.5-flash-lite", "gemini-2.5-flash"]) {
