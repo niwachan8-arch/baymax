@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v9</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v10</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -255,6 +255,11 @@
         iPhoneでは、設定でダウンロードした声(Otoya拡張など)がここに現れない場合があります(Appleの仕様)。
         🔄で再読み込み、それでも出なければiPhoneを再起動してみてください。
         男性声が見つからないときは「🤍 ベイマックスの声にする」が自動で<b>低音モード</b>(声を深く低く変換)になります。
+      </div>
+      <button id="svGenBtn" class="primary" style="margin-top:10px; width:100%;">✨ 特別ボイスを生成(決め台詞を本格男性声に)</button>
+      <div class="hint">
+        呼び出しの第一声・お別れの言葉などの決め台詞を、Geminiの音声合成(無料枠)で<b>深く落ち着いた男性声</b>にします。
+        一度生成すればこの端末に保存され、以降は通信不要。口調を変えたら、その口調用にもう一度押してください。
       </div>
     </div>
     <div class="field">
@@ -409,6 +414,106 @@ const TONES = {
   },
 };
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+/* ---------------- 特別ボイス(Gemini TTS: 決め台詞を本格男性声で・無料枠) ---------------- */
+const svCache = new Map(); // text -> Float32Array(24kHz mono)
+let svDB = null;
+function svOpenDB() {
+  return new Promise((res) => {
+    const req = indexedDB.open("baymax_voice", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("lines");
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => res(null);
+  });
+}
+async function svLoadAll() {
+  svDB = await svOpenDB();
+  if (!svDB) return;
+  try {
+    const tx = svDB.transaction("lines", "readonly").objectStore("lines");
+    const keysReq = tx.getAllKeys();
+    const valsReq = tx.getAll();
+    const pKeys = new Promise(r => { keysReq.onsuccess = r; keysReq.onerror = r; });
+    const pVals = new Promise(r => { valsReq.onsuccess = r; valsReq.onerror = r; });
+    await Promise.all([pKeys, pVals]);
+    (keysReq.result || []).forEach((k, i) => {
+      const v = valsReq.result[i];
+      if (v && v.byteLength) svCache.set(k, new Float32Array(v));
+    });
+  } catch (e) {}
+}
+function svStore(text, f32) {
+  svCache.set(text, f32);
+  if (!svDB) return;
+  try { svDB.transaction("lines", "readwrite").objectStore("lines").put(f32.buffer, text); } catch (e) {}
+}
+async function svSynth(text) {
+  // Gemini TTS(公式・無料枠)で低く穏やかな男性声を合成
+  const body = {
+    contents: [{ parts: [{ text: "低く落ち着いた優しい男性の声で、ゆっくり穏やかに言ってください: " + text }] }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } } },
+    },
+  };
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=" + encodeURIComponent(store.gkey), {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("TTS " + res.status);
+  const j = await res.json();
+  const part = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts && j.candidates[0].content.parts.find(p => p.inlineData);
+  if (!part) throw new Error("TTS no audio");
+  // base64 PCM(16bit LE, 24kHz mono) → Float32
+  const bin = atob(part.inlineData.data);
+  const n = bin.length / 2;
+  const f32 = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let v = bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8);
+    if (v >= 32768) v -= 65536;
+    f32[i] = v / 32768;
+  }
+  return f32;
+}
+function svPlay(f32, gen) {
+  return new Promise((resolve) => {
+    try {
+      ensureAudio();
+      const buf = audioCtx.createBuffer(1, f32.length, 24000);
+      buf.getChannelData(0).set(f32);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(analyser);
+      currentSource = src;
+      src.onended = () => { currentSource = null; resolve(); };
+      src.start();
+    } catch (e) { resolve(); }
+  });
+}
+function svLinesForTone(tone) {
+  const t = TONES[tone] || TONES.std;
+  return [...t.greet, ...t.bye, "こんにちは。私はベイマックス。あなたの健康を守ります。"];
+}
+async function svGenerate() {
+  if (!store.gkey) { toast("先にGemini APIキーを設定してください。"); return; }
+  const lines = svLinesForTone(store.tone).filter(l => !svCache.has(l));
+  if (!lines.length) { toast("この口調の決め台詞は生成済みです。"); return; }
+  addMsg("sys", "✨ 特別ボイスを生成中… 無料枠の制限のため1件ずつ間隔を空けます(約" + Math.ceil(lines.length * 25 / 60) + "分)。画面はこのままで大丈夫です。");
+  let done = 0;
+  for (const line of lines) {
+    try {
+      const f32 = await svSynth(line);
+      svStore(line, f32);
+      done++;
+      addMsg("sys", "🎙 " + done + "/" + lines.length + " 「" + line.slice(0, 18) + "…」完成");
+      if (done === 1) { ttsReset(); await svPlay(f32, ttsGen); } // 最初の1件を試し聞き
+    } catch (e) {
+      addMsg("sys", "⚠ 生成失敗(" + e.message + ")。無料枠の上限の場合は明日また押してください(続きから再開できます)。");
+      break;
+    }
+    if (done < lines.length) await new Promise(r => setTimeout(r, 25000)); // 毎分3回制限を尊重
+  }
+  if (done === lines.length) addMsg("sys", "✨ 完成しました。以降、呼び出しの第一声とお別れの言葉が本格ボイスになります(通信不要)。");
+}
 function activeModel() {
   return store.model === "custom" ? (store.customModel || "claude-sonnet-4-5") : store.model;
 }
@@ -935,7 +1040,7 @@ function ttsEnqueue(text) {
   const t = text.trim();
   if (!t) return;
   const gen = ttsGen;
-  const item = { text: t, promise: vvOk ? vvSynth(t).catch(() => null) : Promise.resolve(null) };
+  const item = { text: t, sv: svCache.get(t) || null, promise: vvOk ? vvSynth(t).catch(() => null) : Promise.resolve(null) };
   ttsQueue.push(item);
   if (!ttsPlaying) ttsPlayLoop(gen);
 }
@@ -948,6 +1053,7 @@ async function ttsPlayLoop(gen) {
   while (ttsQueue.length > 0) {
     if (gen !== ttsGen) return;
     const item = ttsQueue.shift();
+    if (item.sv) { if (gen !== ttsGen) return; await svPlay(item.sv, gen); continue; }
     const buf = await item.promise;
     if (gen !== ttsGen) return;
     if (buf) await playWav(buf, gen);
@@ -1550,6 +1656,8 @@ function initSettingsUI() {
   $("into").value = store.into; $("intoVal").textContent = store.into;
 }
 initSettingsUI();
+svLoadAll();
+$("svGenBtn").addEventListener("click", () => { ensureAudio(); svGenerate(); });
 checkVoicevox();
 addMsg("sys", "ようこそ。マイクボタンを押すか、テキストで話しかけてください。");
 if (brainKeyMissing()) {
