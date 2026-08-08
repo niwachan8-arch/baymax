@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v16</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v17</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -267,6 +267,12 @@
     <div class="field">
       <label>アシスタント機能</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="geoOn"> 📍 位置情報を使う(近くの店・天気・現在地に賢く回答)</label>
+      <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="proOn"> 🗣 自発モード(イヤホン待機中、自分から話しかけてくる)</label>
+      <select id="proFreq" style="margin-bottom:8px;">
+        <option value="low">控えめ(朝の挨拶・雨アラート・休憩の声かけのみ)</option>
+        <option value="mid">普通(+ 90分に一度くらい雑談)</option>
+        <option value="high">おしゃべり(+ 40分に一度くらい雑談)</option>
+      </select>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="svFullOn" checked> 🌟 会話の本文も特別ボイスで話す(上限時は内蔵声に自動切替)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="handsFree" checked> ハンズフリー会話(返答後、自動で聞き取り再開)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="searchOn"> Google検索で最新情報に答える(ニュース・天気など)</label>
@@ -402,6 +408,10 @@ const store = {
   set fxfreq(v) { localStorage.setItem("jv_fxfreq", String(v)); },
   get geo() { return localStorage.getItem("jv_geo") === "1"; },
   set geo(v) { localStorage.setItem("jv_geo", v ? "1" : "0"); },
+  get pro() { return localStorage.getItem("jv_pro") === "1"; },
+  set pro(v) { localStorage.setItem("jv_pro", v ? "1" : "0"); },
+  get profreq() { return localStorage.getItem("jv_profreq") || "mid"; },
+  set profreq(v) { localStorage.setItem("jv_profreq", v); },
 };
 
 /* ---------------- 位置情報(高度アシスタント化) ---------------- */
@@ -1551,6 +1561,115 @@ function rtSendText(text) {
   rt.dc.send(JSON.stringify({ type: "response.create" }));
 }
 
+/* ---------------- 自発モード(自分から話しかける相棒エンジン) ---------------- */
+let proTimes = { rain: 0, care: 0, chat: 0 };
+let proWaitTimer = null;
+
+function proactiveSpeak(text, m) {
+  if (!text) return;
+  addMsg("ai", text);
+  history.push({ role: "assistant", content: text });
+  if (history.length > 30) history = history.slice(-30);
+  lastResponseText = text;
+  if (m) setMood(m, 5500);
+  chime(659, 0.1, 0); // そっと注意を引くひと鳴き
+  ttsReset();
+  setState(S.SPEAKING);
+  ttsEnqueue(text);
+  ttsFinish(() => {
+    // 15秒だけ返事を待ち、なければそっと待機へ戻る
+    sessionOn = true; updateMicUI();
+    setState(S.LISTENING, "お返事があればどうぞ…");
+    startRecognition();
+    clearTimeout(proWaitTimer);
+    proWaitTimer = setTimeout(() => {
+      if (state === S.LISTENING && sessionOn) {
+        sessionOn = false; updateMicUI(); stopRecognition();
+        setState(S.IDLE, "待機中 — イヤホンのボタンで呼び出し");
+        if (standbyOn && keepAlive) { keepAlive.play().catch(() => {}); setMediaState("待機中 — イヤホンのボタンで呼び出し"); }
+      }
+    }, 15000);
+  });
+}
+
+async function rainSoon() {
+  const g = await getGeo(30);
+  if (!g) return null;
+  try {
+    const u = "https://api.open-meteo.com/v1/forecast?latitude=" + g.lat + "&longitude=" + g.lon
+      + "&hourly=precipitation_probability&forecast_hours=3&timezone=auto";
+    const r = await fetch(u, { signal: AbortSignal.timeout(7000) });
+    const j = await r.json();
+    const probs = (j.hourly && j.hourly.precipitation_probability) || [];
+    const maxP = Math.max.apply(null, probs.slice(0, 3));
+    if (maxP >= 60) return "スキャンしました。" + store.name + "、2時間以内に雨が降りそうです(降水確率" + maxP + "パーセント)。お出かけの予定があれば傘をどうぞ。";
+  } catch (e) {}
+  return null;
+}
+
+async function proactiveChat() {
+  if (!store.gkey) return null;
+  try {
+    const body = {
+      system_instruction: { parts: [{ text: sysPromptNow() + "\n【指示】いまあなたから自発的に話しかける一言を生成してください(2文以内)。時刻・現在地・記憶・直近の会話を踏まえ、体調の気遣い/ちょっとした豆知識/軽い雑談/さりげないリマインドのどれか一つ。「おはよう」等の挨拶や同じ話題の繰り返しは避けること。" }] },
+      contents: history.slice(-6).map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
+        .concat([{ role: "user", parts: [{ text: "(自発的な一言をどうぞ)" }] }]),
+      generationConfig: { maxOutputTokens: 200 },
+    };
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=" + encodeURIComponent(store.gkey), {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+    return parts ? parts.map(p => p.text || "").join("").trim() : null;
+  } catch (e) { return null; }
+}
+
+async function proactiveTick() {
+  if (!store.pro || !standbyOn) return;   // 自発モードON かつ イヤホン待機中のみ
+  if (state !== S.IDLE) return;           // 会話中・発話中はしない
+  const h = new Date().getHours();
+  if (h >= 22 || h < 7) return;           // 静かな時間帯(22時〜7時)は話しかけない
+  const now = Date.now();
+  // 1) 朝のブリーフィング(1日1回・7〜11時): 挨拶+天気
+  const today = new Date().toDateString();
+  if (h >= 7 && h < 11 && localStorage.getItem("jv_lastMorning") !== today) {
+    localStorage.setItem("jv_lastMorning", today);
+    let line = "おはようございます、" + store.name + "。";
+    if (store.geo) { const w = await localWeather(); if (w) line += w.replace("スキャンしました。", ""); }
+    else line += "今日も何かあれば、いつでも呼んでくださいね。";
+    proactiveSpeak(line, "happy");
+    return;
+  }
+  // 2) 雨アラート(3時間おきにチェック)
+  if (store.geo && now - proTimes.rain > 3 * 3600 * 1000) {
+    proTimes.rain = now;
+    const alert = await rainSoon();
+    if (alert) { proactiveSpeak(alert, "concern"); return; }
+  }
+  // 3) ケアの声かけ(2時間おき)
+  if (now - proTimes.care > 2 * 3600 * 1000 && proTimes.care !== 0) {
+    proTimes.care = now;
+    proactiveSpeak(pick([
+      "スキャンしました。少し休憩しませんか。水分補給もお忘れなく。",
+      store.name + "、根を詰めすぎていませんか。深呼吸をひとつ、おすすめします。",
+      "定期スキャンの結果、そろそろ体を伸ばすと良い頃合いです。",
+    ]), "concern");
+    return;
+  }
+  if (proTimes.care === 0) proTimes.care = now; // 初回は起点だけ記録
+  // 4) 自発的な雑談(Gemini・頻度設定に応じて)
+  const chatGapMin = store.profreq === "high" ? 40 : store.profreq === "low" ? 0 : 90;
+  if (chatGapMin > 0 && now - proTimes.chat > chatGapMin * 60 * 1000) {
+    proTimes.chat = now;
+    const line = await proactiveChat();
+    if (line) proactiveSpeak(line, detectMood(line));
+  }
+}
+setInterval(proactiveTick, 5 * 60 * 1000); // 5分ごとに機会をうかがう
+setTimeout(proactiveTick, 40 * 1000);      // 起動40秒後にも一度(朝の挨拶用)
+
 /* ---------------- セッション制御 ---------------- */
 function updateMicUI() {
   $("orbWrap").classList.toggle("on", sessionOn);
@@ -1703,6 +1822,8 @@ $("voiceSel").addEventListener("change", () => {
 $("toneSel").addEventListener("change", () => { store.tone = $("toneSel").value; });
 $("geoOn").addEventListener("change", async () => {
   store.geo = $("geoOn").checked;
+  store.pro = $("proOn").checked;
+  store.profreq = $("proFreq").value;
   if (store.geo) {
     toast("位置情報の許可を確認しています…");
     geoCache = null;
@@ -1741,6 +1862,8 @@ function applySettings() {
   store.bargein = $("bargeinOn").checked;
   store.svfull = $("svFullOn").checked;
   store.geo = $("geoOn").checked;
+  store.pro = $("proOn").checked;
+  store.profreq = $("proFreq").value;
   store.name = $("userName").value.trim() || "ご主人様";
   store.sys = $("sysPrompt").value.trim() || DEFAULT_SYS;
   if ($("vvSpeaker").value) store.speaker = $("vvSpeaker").value;
@@ -1929,6 +2052,8 @@ function initSettingsUI() {
   $("bargeinOn").checked = store.bargein;
   $("svFullOn").checked = store.svfull;
   $("geoOn").checked = store.geo;
+  $("proOn").checked = store.pro;
+  $("proFreq").value = store.profreq;
   $("memCount").textContent = store.profile.length;
   updateEngineUI();
   $("userName").value = store.name;
