@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v13</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v14</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -675,8 +675,8 @@ function drawOrb(ts) {
     octx.stroke();
   }
   octx.restore();
-  // コア
-  const coreR = base * (0.30 + level * 0.35);
+  // コア(赤い光)
+  const coreR = base * (0.34 + level * 0.30);
   const grad = octx.createRadialGradient(cx, cy, coreR * 0.1, cx, cy, coreR);
   grad.addColorStop(0, "rgba(255,244,240,0.95)");
   grad.addColorStop(0.45, col + "0.75)");
@@ -685,6 +685,40 @@ function drawOrb(ts) {
   octx.arc(cx, cy, coreR, 0, Math.PI * 2);
   octx.fillStyle = grad;
   octx.fill();
+
+  // ベイマックスの顔(状態で表情が変わる)
+  const fw = base * 0.64, fh = base * 0.44;
+  octx.beginPath();
+  octx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+  octx.fillStyle = "rgba(250,248,246,0.97)";
+  octx.fill();
+  let open = 1, sway = 0, bob = 0;
+  if (state === S.THINKING) {        // 考え中: 少し伏し目で視線が泳ぐ
+    open = 0.8; sway = Math.sin(ts / 420) * base * 0.022;
+  } else if (state === S.SPEAKING) { // 発話中: 声の大きさに合わせて目を細める
+    open = 1 - Math.min(0.55, level * 1.2);
+    bob = Math.sin(ts / 160) * level * base * 0.02;
+  } else if (state === S.LISTENING) { // 聞き取り中: ぱっちり + ゆっくり浮遊
+    open = 1; bob = Math.sin(ts / 800) * base * 0.008;
+  } else {                            // 待機: まどろみ
+    open = 0.55;
+  }
+  const bcycle = ts % 4200;           // ときどきまばたき
+  if (bcycle < 130) open *= Math.max(0.08, Math.abs(Math.sin((bcycle / 130) * Math.PI)));
+  const er = base * 0.052;
+  const ex = base * 0.155, eyY = cy + bob;
+  octx.fillStyle = "#241f1e";
+  for (const sgn of [-1, 1]) {
+    octx.beginPath();
+    octx.ellipse(cx + sgn * ex + sway, eyY, er, Math.max(er * 0.07, er * open), 0, 0, Math.PI * 2);
+    octx.fill();
+  }
+  octx.strokeStyle = "#241f1e";
+  octx.lineWidth = Math.max(2, base * 0.018);
+  octx.beginPath();
+  octx.moveTo(cx - ex + sway, eyY);
+  octx.lineTo(cx + ex + sway, eyY);
+  octx.stroke();
   requestAnimationFrame(drawOrb);
 }
 requestAnimationFrame(drawOrb);
@@ -1228,6 +1262,11 @@ async function checkVoicevox() {
     $("vvText").textContent = "声サーバー接続中(無制限モード)";
     const sel = $("vvSpeaker");
     sel.innerHTML = "";
+    // 先頭に「ベイマックス」プリセットを用意(選ぶだけで声・速さ・抑揚・機械変調まで一括設定)
+    const bm = document.createElement("option");
+    bm.value = "__baymax__";
+    bm.textContent = "🤍 ベイマックス(選ぶだけで一括設定)";
+    sel.appendChild(bm);
     for (const sp of speakers) {
       for (const st of sp.styles) {
         const o = document.createElement("option");
@@ -1237,7 +1276,7 @@ async function checkVoicevox() {
       }
     }
     sel.value = store.speaker;
-    if (!sel.value) { sel.selectedIndex = 0; store.speaker = sel.value; }
+    if (!sel.value) { sel.selectedIndex = 1; store.speaker = sel.value; }
   } catch (e) {
     vvOk = false;
     $("vvLamp").classList.remove("ok");
@@ -1542,6 +1581,14 @@ $("voiceSel").addEventListener("change", () => {
   ttsFinish(() => {});
 });
 $("toneSel").addEventListener("change", () => { store.tone = $("toneSel").value; });
+$("vvSpeaker").addEventListener("change", () => {
+  if ($("vvSpeaker").value === "__baymax__") { $("baymaxVoiceBtn").click(); return; } // ベイマックス一括設定
+  store.speaker = $("vvSpeaker").value;
+  ensureAudio();
+  ttsReset();
+  ttsEnqueue("この声に変更しました。こんにちは、私はベイマックスです。");
+  ttsFinish(() => {});
+});
 $("vvUrl").addEventListener("change", () => {
   store.vvurl = $("vvUrl").value.trim() || "http://127.0.0.1:50021";
   $("vvText").textContent = "接続確認中…";
@@ -1764,7 +1811,7 @@ initSettingsUI();
 svLoadAll();
 $("svGenBtn").addEventListener("click", () => { ensureAudio(); svGenerate(); });
 checkVoicevox();
-addMsg("sys", "ようこそ。マイクボタンを押すか、テキストで話しかけてください。");
+addMsg("sys", "ようこそ。ベイマックスの顔をタップするか、テキストで話しかけてください。");
 if (brainKeyMissing()) {
   addMsg("sys", "初回セットアップ: 右上の「⚙ 設定」からGemini APIキー(無料・カード不要)を設定してください。");
 }
