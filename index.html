@@ -144,7 +144,7 @@
     main { flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     #chatCol { flex: 1 0 auto; min-height: 40vh; }
     #stage { flex: 0 0 auto; padding: 10px 8px 14px; gap: 12px; }
-    #orbWrap { width: min(230px, 58vw); }
+    #orbWrap { width: min(330px, 88vw); }
     #chatCol { border-left: none; border-top: 1px solid rgba(255,122,110,.1); }
     #statusText { font-size: 16px; }
     #subStatus { font-size: 13.5px; }
@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v14</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v15</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -454,6 +454,18 @@ const TONES = {
 };
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+/* 感情(表情モノグラム用): 返答テキストから気分を推定して数秒間表情に反映 */
+let mood = "neutral", moodUntil = 0;
+function setMood(m, ms) { mood = m; moodUntil = Date.now() + (ms || 6000); }
+function detectMood(text) {
+  const t = text || "";
+  if (/(ありがとう|嬉し|うれし|良かった|よかった|楽し|たのし|最高|おめでと|素晴らし|すばらし|いいですね|素敵)/.test(t)) return "happy";
+  if (/(すごい|えっ|驚|びっくり|なんと|まさか)/.test(t)) return "surprise";
+  if (/(残念|悲し|かなし|ごめん|申し訳|さみし|寂し)/.test(t)) return "sad";
+  if (/(心配|大丈夫です?か|無理|疲れ|休んで|お大事|痛|辛|つら|気をつけ)/.test(t)) return "concern";
+  return "neutral";
+}
+
 /* ---------------- 特別ボイス(Gemini TTS: 決め台詞を本格男性声で・無料枠) ---------------- */
 const svCache = new Map(); // text -> Float32Array(24kHz mono)
 let svDB = null;
@@ -686,39 +698,77 @@ function drawOrb(ts) {
   octx.fillStyle = grad;
   octx.fill();
 
-  // ベイマックスの顔(状態で表情が変わる)
-  const fw = base * 0.64, fh = base * 0.44;
+  // ベイマックスの顔(状態 + 感情で表情が変わる)
+  const effMood = Date.now() < moodUntil ? mood : null;
+  const fw = base * 0.92, fh = base * 0.62;
+  let faceBob = 0;
+  if (state === S.SPEAKING) faceBob = Math.sin(ts / 150) * level * base * 0.03; // 話すとき小さくうなずく
   octx.beginPath();
-  octx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+  octx.ellipse(cx, cy + faceBob, fw / 2, fh / 2, 0, 0, Math.PI * 2);
   octx.fillStyle = "rgba(250,248,246,0.97)";
   octx.fill();
-  let open = 1, sway = 0, bob = 0;
-  if (state === S.THINKING) {        // 考え中: 少し伏し目で視線が泳ぐ
-    open = 0.8; sway = Math.sin(ts / 420) * base * 0.022;
-  } else if (state === S.SPEAKING) { // 発話中: 声の大きさに合わせて目を細める
-    open = 1 - Math.min(0.55, level * 1.2);
-    bob = Math.sin(ts / 160) * level * base * 0.02;
+
+  let open = 1, sway = 0, bob = faceBob, tilt = 0, eyeScale = 1, drop = 0;
+  if (state === S.THINKING) {         // 考え中: 伏し目で視線が泳ぐ
+    open = 0.8; sway = Math.sin(ts / 420) * base * 0.032;
+  } else if (state === S.SPEAKING) {  // 発話中: 声に合わせて目を細める
+    open = 1 - Math.min(0.45, level * 1.0);
   } else if (state === S.LISTENING) { // 聞き取り中: ぱっちり + ゆっくり浮遊
-    open = 1; bob = Math.sin(ts / 800) * base * 0.008;
+    open = 1; bob += Math.sin(ts / 800) * base * 0.012;
   } else {                            // 待機: まどろみ
     open = 0.55;
   }
-  const bcycle = ts % 4200;           // ときどきまばたき
-  if (bcycle < 130) open *= Math.max(0.08, Math.abs(Math.sin((bcycle / 130) * Math.PI)));
-  const er = base * 0.052;
-  const ex = base * 0.155, eyY = cy + bob;
-  octx.fillStyle = "#241f1e";
-  for (const sgn of [-1, 1]) {
-    octx.beginPath();
-    octx.ellipse(cx + sgn * ex + sway, eyY, er, Math.max(er * 0.07, er * open), 0, 0, Math.PI * 2);
-    octx.fill();
+  if (effMood === "surprise") {       // 驚き: 目を見開いて少し上ずる
+    eyeScale = 1.35; open = 1; bob -= base * 0.02;
+  } else if (effMood === "concern") { // 心配: 目が少し下がり、ハの字に傾く
+    open = Math.min(open, 0.75); tilt = 0.26; drop = base * 0.018;
+  } else if (effMood === "sad") {     // 哀しみ: さらに伏せる
+    open = Math.min(open, 0.45); tilt = 0.34; drop = base * 0.035;
   }
-  octx.strokeStyle = "#241f1e";
-  octx.lineWidth = Math.max(2, base * 0.018);
+
+  const bcycle = ts % 4200;           // ときどきまばたき
+  if (bcycle < 130 && effMood !== "happy") open *= Math.max(0.08, Math.abs(Math.sin((bcycle / 130) * Math.PI)));
+
+  const er = base * 0.075 * eyeScale;
+  const ex = base * 0.23, eyY = cy + bob + drop;
+  const ink = "#241f1e";
+  octx.fillStyle = ink;
+  octx.strokeStyle = ink;
+  octx.lineCap = "round";
+  if (effMood === "happy") {
+    // 喜び: にっこり(∩型の閉じ目)
+    octx.lineWidth = Math.max(2.5, base * 0.028);
+    for (const sgn of [-1, 1]) {
+      octx.beginPath();
+      octx.arc(cx + sgn * ex + sway, eyY + er * 0.35, er * 0.95, Math.PI, 0, false);
+      octx.stroke();
+    }
+  } else {
+    for (const sgn of [-1, 1]) {
+      octx.beginPath();
+      octx.ellipse(cx + sgn * ex + sway, eyY, er, Math.max(er * 0.07, er * open), sgn * tilt, 0, Math.PI * 2);
+      octx.fill();
+    }
+  }
+  // 目をつなぐ線
+  octx.lineWidth = Math.max(2, base * 0.022);
   octx.beginPath();
   octx.moveTo(cx - ex + sway, eyY);
   octx.lineTo(cx + ex + sway, eyY);
   octx.stroke();
+  // 考え中の「…」
+  if (state === S.THINKING) {
+    const phase = Math.floor(ts / 350) % 4;
+    for (let i = 0; i < 3; i++) {
+      octx.globalAlpha = i < phase ? 0.85 : 0.15;
+      octx.beginPath();
+      octx.arc(cx + fw * 0.30 + i * base * 0.055, cy - fh * 0.46, base * 0.022, 0, Math.PI * 2);
+      octx.fillStyle = "rgba(255,235,230,0.9)";
+      octx.fill();
+    }
+    octx.globalAlpha = 1;
+    octx.fillStyle = ink;
+  }
   requestAnimationFrame(drawOrb);
 }
 requestAnimationFrame(drawOrb);
@@ -813,6 +863,7 @@ function handleUtterance(text) {
     addMsg("ai", bye);
     history.push({ role: "user", content: text }, { role: "assistant", content: bye });
     lastResponseText = bye;
+    setMood("happy", 4500);
     stopRecognition();
     ttsReset();
     setState(S.SPEAKING);
@@ -983,6 +1034,7 @@ async function sendToClaude(userText) {
     if (history.length > 30) history = history.slice(-30);
     addMsg("ai", local);
     lastResponseText = local;
+    setMood(detectMood(local));
     ttsReset();
     setState(S.SPEAKING);
     ttsEnqueue(local);
@@ -1070,6 +1122,7 @@ async function sendToClaude(userText) {
       }
     }
     lastResponseText = full;
+    setMood(detectMood(full));
     history.push({ role: "assistant", content: full || "…" });
     // 特別ボイス標準モード: 応答全文を本格男性声で
     if (fullVoice && full.trim()) {
@@ -1105,6 +1158,7 @@ async function sendToClaude(userText) {
     aiDiv.remove();
     history.pop();
     addMsg("sys", "⚠ " + err.message);
+    setMood("sad", 3500);
     toast(err.message, 5000);
     setState(sessionOn ? S.LISTENING : S.IDLE);
     if (sessionOn) scheduleRelisten(600);
@@ -1186,6 +1240,8 @@ async function vvSynth(text) {
   query.speedScale = store.rate;
   query.pitchScale = store.pitch;
   query.intonationScale = store.into;
+  query.prePhonemeLength = 0.12;   // 発話前の小さな間
+  query.postPhonemeLength = 0.32;  // 文末のたっぷりした間(ベイマックスの話し方の要)
   const s = await fetch(store.vvurl + "/synthesis?speaker=" + sp, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1515,11 +1571,16 @@ $("baymaxVoiceBtn").addEventListener("click", () => {
                || Array.from(vsel.options).find(o => /Otoya|オトヤ|Ichiro|Keita|Daichi|Hattori/i.test(o.value));
   // ベイマックス質感: 声サーバー接続中は「低音話者+ゆっくり+平坦+ほのかな機械変調」まで一括設定
   if (vvOk) {
-    $("into").value = "0.55"; $("intoVal").textContent = "0.55"; store.into = 0.55;
-    $("fxwet").value = "0.06"; $("fxwetVal").textContent = "0.06"; store.fxwet = 0.06;
-    $("fxfreq").value = "90"; $("fxfreqVal").textContent = "90"; store.fxfreq = 90;
+    // 本物寄りチューニング: やや高め(+0.03)・超ゆっくり(0.84)・抑揚ほぼ平坦(0.35)・ほのかな変調
+    $("rate").value = "0.84"; $("rateVal").textContent = "0.84"; store.rate = 0.84;
+    $("pitch").value = "0.03"; $("pitchVal").textContent = "0.03"; store.pitch = 0.03;
+    $("into").value = "0.35"; $("intoVal").textContent = "0.35"; store.into = 0.35;
+    $("fxwet").value = "0.05"; $("fxwetVal").textContent = "0.05"; store.fxwet = 0.05;
+    $("fxfreq").value = "85"; $("fxfreqVal").textContent = "85"; store.fxfreq = 85;
   }
-  if (maleOpt) {
+  if (vvOk) {
+    // 声サーバー接続中は話者選択+上のチューニングで完結(内蔵声の調整はしない)
+  } else if (maleOpt) {
     // 男性声あり: それを選び、わずかに低く・ゆっくり
     vsel.value = maleOpt.value; store.voice = maleOpt.value;
     $("rate").value = "0.88"; $("rateVal").textContent = "0.88"; store.rate = 0.88;
@@ -1727,6 +1788,7 @@ function summon() {
   const g = pick((TONES[store.tone] || TONES.std).greet);
   addMsg("ai", g);
   lastResponseText = g;
+  setMood("happy", 3000);
   ttsReset();
   setState(S.SPEAKING);
   ttsEnqueue(g);
