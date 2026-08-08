@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion</small>
+      <small>Personal Healthcare Companion <span id="appVer">v8</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -287,7 +287,10 @@
     </div>
     <div style="display:flex; gap:10px;">
       <button id="saveSettings" class="primary" style="flex:1;">保存</button>
-      <button id="testVoice" style="flex:1;">音声テスト</button>
+      <button id="testVoice" style="flex:1;">🔊 音声テスト</button>
+    </div>
+    <div class="hint" style="margin-top:-6px;">
+      ⚠ 音声テストが聞こえない場合: iPhone側面の<b>消音スイッチ(オレンジが見えていたら消音中)</b>をオフにし、音量ボタンで音量を上げてください。iPhoneのWebアプリの読み上げは消音スイッチの影響を受けます。
     </div>
   </div>
 </aside>
@@ -918,8 +921,10 @@ let ttsPlaying = false;
 let ttsDoneCb = null;
 let ttsGen = 0;           // 世代(リセットで無効化)
 
+let lastCancelTs = 0;
 function ttsReset() {
   ttsGen++;
+  lastCancelTs = performance.now();
   ttsQueue = [];
   ttsPlaying = false;
   ttsDoneCb = null;
@@ -1004,7 +1009,12 @@ function speakFallback(text, gen) {
     }
     u.onend = () => resolve();
     u.onerror = () => resolve();
-    speechSynthesis.speak(u);
+    // iOS対策: cancel()直後のspeak()は無音になることがあるため少し待つ + 停止状態を解除
+    const wait = Math.max(0, 280 - (performance.now() - lastCancelTs));
+    setTimeout(() => {
+      try { speechSynthesis.resume(); } catch (e) {}
+      speechSynthesis.speak(u);
+    }, wait);
     // 保険: 長すぎる場合のタイムアウト
     setTimeout(() => { if (gen !== ttsGen) { try{speechSynthesis.cancel();}catch(e){} resolve(); } }, 60000);
   });
@@ -1508,7 +1518,7 @@ if (navigator.storage && navigator.storage.persist) {
 
 /* Service Worker 登録(https配信時のみ) */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  navigator.serviceWorker.register("sw.js").then(reg => { try { reg.update(); } catch (e) {} }).catch(() => {});
 }
 
 /* ---------------- 初期化 ---------------- */
