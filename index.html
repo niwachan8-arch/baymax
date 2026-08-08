@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v12</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v13</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -290,8 +290,15 @@
       <input type="range" id="pitch" min="-0.15" max="0.1" step="0.01" value="0">
     </div>
     <div class="field">
-      <label>抑揚(VOICEVOX利用時のみ) <span id="intoVal" style="color:var(--cyan)">1.0</span></label>
+      <label>抑揚(声サーバー利用時・低いほど平坦) <span id="intoVal" style="color:var(--cyan)">1.0</span></label>
       <input type="range" id="into" min="0.2" max="1.4" step="0.05" value="1.0">
+    </div>
+    <div class="field">
+      <label>🤖 ロボット質感(リング変調) <span id="fxwetVal" style="color:var(--cyan)">0</span></label>
+      <input type="range" id="fxwet" min="0" max="0.3" step="0.01" value="0">
+      <label style="margin-top:10px;">変調の周波数 <span id="fxfreqVal" style="color:var(--cyan)">90</span>Hz</label>
+      <input type="range" id="fxfreq" min="60" max="160" step="5" value="90">
+      <div class="hint">声サーバー・特別ボイスの声に、ほのかな機械音声の質感を加えます(0でオフ)。上げすぎると聞き取りにくくなるので0.04〜0.08がおすすめ。iPhone内蔵声には効きません。</div>
     </div>
     <div style="display:flex; gap:10px;">
       <button id="saveSettings" class="primary" style="flex:1;">保存</button>
@@ -388,7 +395,32 @@ const store = {
   set svfull(v) { localStorage.setItem("jv_svfull", v ? "1" : "0"); },
   get vvurl() { return (localStorage.getItem("jv_vvurl") || "http://127.0.0.1:50021").replace(/\/+$/, ""); },
   set vvurl(v) { localStorage.setItem("jv_vvurl", v); },
+  get fxwet() { return parseFloat(localStorage.getItem("jv_fxwet") || "0"); },
+  set fxwet(v) { localStorage.setItem("jv_fxwet", String(v)); },
+  get fxfreq() { return parseFloat(localStorage.getItem("jv_fxfreq") || "90"); },
+  set fxfreq(v) { localStorage.setItem("jv_fxfreq", String(v)); },
 };
+
+/* ロボット質感エフェクト(前作PC版のリング変調を移植)
+   声サーバー(VOICEVOX)と特別ボイスの再生に、ほのかな機械変調をかける */
+function connectVoiceFx(src, durationSec) {
+  const wet = Math.max(0, Math.min(0.3, store.fxwet));
+  if (wet <= 0.001) { src.connect(analyser); return; }
+  const dry = audioCtx.createGain();
+  dry.gain.value = 1 - wet;
+  const ring = audioCtx.createGain();
+  ring.gain.value = 0; // 0を中心にオシレーターで±1変調 = リング変調
+  const osc = audioCtx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.value = store.fxfreq;
+  osc.connect(ring.gain);
+  const wetGain = audioCtx.createGain();
+  wetGain.gain.value = wet * 1.7;
+  src.connect(dry); dry.connect(analyser);
+  src.connect(ring); ring.connect(wetGain); wetGain.connect(analyser);
+  osc.start();
+  osc.stop(audioCtx.currentTime + (durationSec || 30) + 0.2);
+}
 
 /* ---------------- 口調プリセット(声はそのまま、話し方だけ着せ替え) ---------------- */
 const TONES = {
@@ -489,7 +521,7 @@ function svPlay(f32, gen) {
       buf.getChannelData(0).set(f32);
       const src = audioCtx.createBufferSource();
       src.buffer = buf;
-      src.connect(analyser);
+      connectVoiceFx(src, buf.duration);
       currentSource = src;
       src.onended = () => { currentSource = null; resolve(); };
       src.start();
@@ -1137,7 +1169,7 @@ function playWav(arrayBuffer, gen) {
       if (gen !== ttsGen) { resolve(); return; }
       const src = audioCtx.createBufferSource();
       src.buffer = audioBuf;
-      src.connect(analyser);
+      connectVoiceFx(src, audioBuf.duration);
       currentSource = src;
       src.onended = () => { currentSource = null; resolve(); };
       src.start();
@@ -1442,6 +1474,12 @@ $("baymaxVoiceBtn").addEventListener("click", () => {
   const vsel = $("voiceSel");
   const maleOpt = Array.from(vsel.options).find(o => /Otoya|オトヤ/i.test(o.value) && /拡張|Enhanced|Premium/i.test(o.value))
                || Array.from(vsel.options).find(o => /Otoya|オトヤ|Ichiro|Keita|Daichi|Hattori/i.test(o.value));
+  // ベイマックス質感: 声サーバー接続中は「低音話者+ゆっくり+平坦+ほのかな機械変調」まで一括設定
+  if (vvOk) {
+    $("into").value = "0.55"; $("intoVal").textContent = "0.55"; store.into = 0.55;
+    $("fxwet").value = "0.06"; $("fxwetVal").textContent = "0.06"; store.fxwet = 0.06;
+    $("fxfreq").value = "90"; $("fxfreqVal").textContent = "90"; store.fxfreq = 90;
+  }
   if (maleOpt) {
     // 男性声あり: それを選び、わずかに低く・ゆっくり
     vsel.value = maleOpt.value; store.voice = maleOpt.value;
@@ -1510,6 +1548,10 @@ $("vvUrl").addEventListener("change", () => {
   checkVoicevox();
 });
 $("rate").addEventListener("change", () => { store.rate = parseFloat($("rate").value); });
+$("fxwet").addEventListener("input", () => $("fxwetVal").textContent = $("fxwet").value);
+$("fxfreq").addEventListener("input", () => $("fxfreqVal").textContent = $("fxfreq").value);
+$("fxwet").addEventListener("change", () => { store.fxwet = parseFloat($("fxwet").value); });
+$("fxfreq").addEventListener("change", () => { store.fxfreq = parseFloat($("fxfreq").value); });
 $("pitch").addEventListener("change", () => { store.pitch = parseFloat($("pitch").value); });
 $("into").addEventListener("change", () => { store.into = parseFloat($("into").value); });
 
@@ -1528,6 +1570,8 @@ function applySettings() {
   store.rate = parseFloat($("rate").value);
   store.pitch = parseFloat($("pitch").value);
   store.into = parseFloat($("into").value);
+  store.fxwet = parseFloat($("fxwet").value);
+  store.fxfreq = parseFloat($("fxfreq").value);
 }
 $("saveSettings").addEventListener("click", () => {
   applySettings();
@@ -1713,6 +1757,8 @@ function initSettingsUI() {
   $("rate").value = store.rate; $("rateVal").textContent = store.rate;
   $("pitch").value = store.pitch; $("pitchVal").textContent = store.pitch;
   $("into").value = store.into; $("intoVal").textContent = store.into;
+  $("fxwet").value = store.fxwet; $("fxwetVal").textContent = store.fxwet;
+  $("fxfreq").value = store.fxfreq; $("fxfreqVal").textContent = store.fxfreq;
 }
 initSettingsUI();
 svLoadAll();
