@@ -1,5 +1,5 @@
 // BAYMAX Service Worker — アプリ本体をキャッシュしてオフラインでも起動できるようにする
-const CACHE = "baymax-lite-v10";
+const CACHE = "baymax-lite-v11";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {

@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v10</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v11</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -264,6 +264,7 @@
     </div>
     <div class="field">
       <label>アシスタント機能</label>
+      <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="svFullOn" checked> 🌟 会話の本文も特別ボイスで話す(上限時は内蔵声に自動切替)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="handsFree" checked> ハンズフリー会話(返答後、自動で聞き取り再開)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="searchOn"> Google検索で最新情報に答える(ニュース・天気など)</label>
       <label class="toggleRow"><input type="checkbox" id="bargeinOn"> 割り込み発話(応答中に話しかけて遮れる・イヤホン推奨)</label>
@@ -381,6 +382,8 @@ const store = {
   set tone(v) { localStorage.setItem("jv_tone", v); },
   get voice() { return localStorage.getItem("jv_voice") || "auto"; },
   set voice(v) { localStorage.setItem("jv_voice", v); },
+  get svfull() { return localStorage.getItem("jv_svfull") !== "0"; },
+  set svfull(v) { localStorage.setItem("jv_svfull", v ? "1" : "0"); },
 };
 
 /* ---------------- 口調プリセット(声はそのまま、話し方だけ着せ替え) ---------------- */
@@ -489,6 +492,20 @@ function svPlay(f32, gen) {
     } catch (e) { resolve(); }
   });
 }
+/* 特別ボイスの無料枠ペース管理(毎分3回) */
+let svCallTimes = [];
+let svNoticeShown = false;
+function svRateOk() {
+  const now = Date.now();
+  svCallTimes = svCallTimes.filter(t => now - t < 62000);
+  return svCallTimes.length < 3;
+}
+function svMarkCall() { svCallTimes.push(Date.now()); }
+function svFullActive() { return store.svfull && !!store.gkey; }
+function svNotice(msg) {
+  if (!svNoticeShown) { svNoticeShown = true; addMsg("sys", "ℹ️ " + msg + " 内蔵の声で続けます(特別ボイスは自動で復帰します)。"); }
+}
+
 function svLinesForTone(tone) {
   const t = TONES[tone] || TONES.std;
   return [...t.greet, ...t.bye, "こんにちは。私はベイマックス。あなたの健康を守ります。"];
@@ -952,7 +969,8 @@ async function sendToClaude(userText) {
     }
     if (!res) throw (lastErr || new Error("接続できませんでした"));
 
-    setState(S.SPEAKING);
+    const fullVoice = svFullActive();
+    setState(S.SPEAKING, fullVoice ? "返事を考えています…" : undefined);
     startBargeIn();
     const reader = res.body.getReader();
     const dec = new TextDecoder();
@@ -974,15 +992,44 @@ async function sendToClaude(userText) {
           full += delta;
           aiDiv.childNodes[1].textContent = full;
           logEl.scrollTop = logEl.scrollHeight;
-          // 文単位でTTSに送る
-          const m = findSentenceEnd(full, spoken);
-          if (m > spoken) { ttsEnqueue(full.slice(spoken, m)); spoken = m; }
+          if (!fullVoice) {
+            // 文単位でTTSに送る(内蔵ボイスモード)
+            const m = findSentenceEnd(full, spoken);
+            if (m > spoken) { ttsEnqueue(full.slice(spoken, m)); spoken = m; }
+          }
         }
       }
     }
-    if (full.slice(spoken).trim()) ttsEnqueue(full.slice(spoken));
     lastResponseText = full;
     history.push({ role: "assistant", content: full || "…" });
+    // 特別ボイス標準モード: 応答全文を本格男性声で
+    if (fullVoice && full.trim()) {
+      const text = full.trim();
+      const gen = ttsGen;
+      let pcm = svCache.get(text) || null;
+      if (!pcm) {
+        if (svRateOk()) {
+          try {
+            setState(S.SPEAKING, "本格ボイスを準備中…");
+            svMarkCall();
+            pcm = await svSynth(text);
+            if (text.length <= 220) svStore(text, pcm); // 短い応答はキャッシュして無料枠を節約
+          } catch (e) {
+            svNotice(/429/.test(e.message) ? "特別ボイスの無料枠が本日の上限に達しました。" : "特別ボイスの生成に失敗しました(" + e.message + ")。");
+          }
+        } else {
+          svNotice("特別ボイスの無料枠ペース(毎分3回)を一時的に超えました。");
+        }
+      }
+      if (gen !== ttsGen) return; // 割り込みされた
+      if (pcm) {
+        setState(S.SPEAKING);
+        await svPlay(pcm, gen);
+        if (gen === ttsGen) afterResponse();
+        return;
+      }
+    }
+    if (full.slice(spoken).trim()) ttsEnqueue(full.slice(spoken));
     ttsFinish(() => afterResponse());
   } catch (err) {
     if (err.name === "AbortError") { setState(S.IDLE); return; }
@@ -1465,6 +1512,7 @@ function applySettings() {
   store.gmodel = $("gModel").value.trim() || "gemini-2.5-flash";
   store.search = $("searchOn").checked;
   store.bargein = $("bargeinOn").checked;
+  store.svfull = $("svFullOn").checked;
   store.name = $("userName").value.trim() || "ご主人様";
   store.sys = $("sysPrompt").value.trim() || DEFAULT_SYS;
   if ($("vvSpeaker").value) store.speaker = $("vvSpeaker").value;
@@ -1647,6 +1695,7 @@ function initSettingsUI() {
   $("gModel").value = store.gmodel === "gemini-2.5-flash" ? "" : store.gmodel;
   $("searchOn").checked = store.search;
   $("bargeinOn").checked = store.bargein;
+  $("svFullOn").checked = store.svfull;
   $("memCount").textContent = store.profile.length;
   updateEngineUI();
   $("userName").value = store.name;
