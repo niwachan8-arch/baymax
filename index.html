@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v8</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v9</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -1339,6 +1339,18 @@ $("voiceReload").addEventListener("click", () => {
   setTimeout(populateVoices, 300);
   toast("声リストを再読み込みしました。");
 });
+/* 声・口調・スライダーは選んだ瞬間に反映(即保存+試し聞き) */
+$("voiceSel").addEventListener("change", () => {
+  store.voice = $("voiceSel").value;
+  ensureAudio();
+  ttsReset();
+  ttsEnqueue("この声に変更しました。こんにちは、私はベイマックスです。");
+  ttsFinish(() => {});
+});
+$("toneSel").addEventListener("change", () => { store.tone = $("toneSel").value; });
+$("rate").addEventListener("change", () => { store.rate = parseFloat($("rate").value); });
+$("pitch").addEventListener("change", () => { store.pitch = parseFloat($("pitch").value); });
+$("into").addEventListener("change", () => { store.into = parseFloat($("into").value); });
 
 function applySettings() {
   store.tone = $("toneSel").value;
@@ -1363,6 +1375,7 @@ $("saveSettings").addEventListener("click", () => {
 $("gKey").addEventListener("input", () => { store.gkey = $("gKey").value.trim(); });
 $("gKey").addEventListener("change", () => { store.gkey = $("gKey").value.trim(); });
 $("testVoice").addEventListener("click", () => {
+  applySettings(); // いま画面に見えている設定をそのまま反映してからテスト
   ensureAudio();
   if ($("vvSpeaker").value) store.speaker = $("vvSpeaker").value;
   store.rate = parseFloat($("rate").value);
