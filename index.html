@@ -238,6 +238,25 @@
       </div>
     </div>
     <div class="field">
+      <label>口調(しゃべり方の着せ替え)</label>
+      <select id="toneSel">
+        <option value="std">🤍 ベイマックス標準(穏やかケア)</option>
+        <option value="butler">🎩 まじめ執事</option>
+        <option value="gyaru">💅 ギャル</option>
+        <option value="kansai">🐙 関西弁</option>
+        <option value="samurai">⚔️ 武士</option>
+      </select>
+      <div class="hint">声はそのまま、話し方だけ変わります。呼び出し時の第一声と「もう大丈夫だよ」のお別れも口調に合わせて変わります。</div>
+    </div>
+    <div class="field">
+      <label>声の種類</label>
+      <select id="voiceSel"><option value="auto">自動(男性の声を優先)</option></select>
+      <div class="hint">
+        より本物に近い低音ボイスにするには: iPhoneの<b>設定→アクセシビリティ→読み上げコンテンツ→声→日本語</b>で
+        「<b>Otoya(拡張)</b>」をダウンロード。その後アプリを開き直すと、ここに現れます。
+      </div>
+    </div>
+    <div class="field">
       <label>アシスタント機能</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="searchOn"> Google検索で最新情報に答える(ニュース・天気など)</label>
       <label class="toggleRow"><input type="checkbox" id="bargeinOn"> 割り込み発話(応答中に話しかけて遮れる・イヤホン推奨)</label>
@@ -347,7 +366,43 @@ const store = {
   set search(v) { localStorage.setItem("jv_search", v ? "1" : "0"); },
   get bargein() { return localStorage.getItem("jv_bargein") !== "0"; },
   set bargein(v) { localStorage.setItem("jv_bargein", v ? "1" : "0"); },
+  get tone() { return localStorage.getItem("jv_tone") || "std"; },
+  set tone(v) { localStorage.setItem("jv_tone", v); },
+  get voice() { return localStorage.getItem("jv_voice") || "auto"; },
+  set voice(v) { localStorage.setItem("jv_voice", v); },
 };
+
+/* ---------------- 口調プリセット(声はそのまま、話し方だけ着せ替え) ---------------- */
+const TONES = {
+  std: {
+    sys: "",
+    greet: ["はい、どうしましたか。", "お呼びですか。私はここにいますよ。"],
+    bye: ["確認しました。またいつでも呼んでくださいね。お大事に。",
+          "はい。ゆっくり休んでくださいね。また何かあればお呼びください。",
+          "わかりました。あなたの健康を、いつでも見守っていますよ。"],
+  },
+  butler: {
+    sys: "【口調指定】執事として、極めて丁寧な敬語で話してください。「かしこまりました」「お任せくださいませ」「〜でございます」等の格調ある言い回しを使い、落ち着いて品よく。ベイマックスとしての優しさと気遣いは保ってください。",
+    greet: ["お呼びでございますか、ご主人様。", "はい、いかがなさいましたか。"],
+    bye: ["かしこまりました。またいつでもお申し付けくださいませ。", "承知いたしました。ご健勝を心よりお祈りしております。"],
+  },
+  gyaru: {
+    sys: "【口調指定】ギャル語で話してください。「まじ」「やば」「〜じゃん」「〜だし」「てか」などを自然に使い、明るくハイテンションに。ただし絵文字や記号は使わず、音声で自然に聞こえる範囲で。ベイマックスとしての優しさと健康への気遣いは全力で保ってください。",
+    greet: ["はいはーい、呼んだ？どしたの？", "おまたせ〜！なんかあった？"],
+    bye: ["りょ！またね〜、ちゃんと元気でいてよね！", "おっけー！また呼んでね、ばいばーい！"],
+  },
+  kansai: {
+    sys: "【口調指定】親しみやすい関西弁で話してください。「〜やで」「〜やん」「ほんまに」「あかん」などを自然に使い、温かくお節介な感じで。ベイマックスとしての優しさは保ってください。",
+    greet: ["はいはい、どないしたん？", "呼んだ？なんかあったんか？"],
+    bye: ["ほな、またな。無理したらあかんで。", "おおきに。またいつでも呼んでや。"],
+  },
+  samurai: {
+    sys: "【口調指定】武士のような侍言葉で話してください。「〜でござる」「かたじけない」「承知した」「〜されよ」などを使い、実直で忠義に厚く。ベイマックスとしての優しさ(主君の健康を案じる忠臣として)は保ってください。",
+    greet: ["お呼びでござるか。", "いかがなされた。それがしはここに。"],
+    bye: ["承知した。息災でおられよ。", "うむ。またいつでも呼ばれよ。御免。"],
+  },
+};
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function activeModel() {
   return store.model === "custom" ? (store.customModel || "claude-sonnet-4-5") : store.model;
 }
@@ -556,12 +611,7 @@ function handleUtterance(text) {
   // 会話の終了(「もう大丈夫だよ」等)→ お別れの一言 → イヤホン待機へ戻る
   const plain = text.replace(/[。、！？!?\s]/g, "");
   if (/もう大丈夫|会話(を)?終了|これで(終わり|おわり)|じゃあね|またね|おやすみ|スリープ/.test(plain) && plain.length <= 15) {
-    const byes = [
-      "確認しました。またいつでも呼んでくださいね。お大事に。",
-      "はい。ゆっくり休んでくださいね。また何かあればお呼びください。",
-      "わかりました。あなたの健康を、いつでも見守っていますよ。",
-    ];
-    const bye = byes[Math.floor(Math.random() * byes.length)];
+    const bye = pick((TONES[store.tone] || TONES.std).bye);
     addMsg("user", text);
     addMsg("ai", bye);
     history.push({ role: "user", content: text }, { role: "assistant", content: bye });
@@ -579,6 +629,8 @@ function handleUtterance(text) {
 /* ---------------- 頭脳エンジン(ストリーミング) ---------------- */
 function sysPromptNow() {
   let s = store.sys + "\nユーザーの呼び名: " + store.name + "\n現在日時: " + new Date().toLocaleString("ja-JP");
+  const t = TONES[store.tone];
+  if (t && t.sys) s += "\n" + t.sys;
   const p = store.profile;
   if (p.length) s += "\nユーザーについて覚えていること:\n- " + p.join("\n- ");
   return s;
@@ -936,7 +988,17 @@ function speakFallback(text, gen) {
     u.rate = store.rate;
     u.pitch = Math.max(0.5, Math.min(1.5, 1 + store.pitch * 4)); // 「声の高さ」をiPhone内蔵音声にも反映
     const vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith("ja"));
-    if (vs.length) u.voice = vs.find(v => /Google|Kyoko|Nanami|Ichiro/i.test(v.name)) || vs[0];
+    if (vs.length) {
+      let v = null;
+      if (store.voice !== "auto") v = vs.find(x => x.name === store.voice) || null;
+      if (!v) {
+        // ベイマックス寄り: 男性声を優先(拡張/プレミアム版があればさらに優先)
+        const male = vs.filter(x => /Otoya|オトヤ|Ichiro|Keita|Daichi|Hattori|男/i.test(x.name));
+        const pool = male.length ? male : vs;
+        v = pool.find(x => /拡張|Enhanced|Premium|プレミアム/i.test(x.name)) || pool[0];
+      }
+      u.voice = v;
+    }
     u.onend = () => resolve();
     u.onerror = () => resolve();
     speechSynthesis.speak(u);
@@ -1208,9 +1270,14 @@ $("baymaxVoiceBtn").addEventListener("click", () => {
     if (found) break;
   }
   if (found) { sel.value = found.value; store.speaker = found.value; }
-  // 前作PC版のチューニング結果を反映: やや高め・ゆっくりが「ベイマックスらしい」
-  $("rate").value = "0.95"; $("rateVal").textContent = "0.95"; store.rate = 0.95;
-  $("pitch").value = "0.02"; $("pitchVal").textContent = "0.02"; store.pitch = 0.02;
+  // 川島得愛さんの声(低め・温かい・ゆっくり)に寄せる: 男性声Otoyaを選択し、ゆっくりめに
+  const vsel = $("voiceSel");
+  const maleOpt = Array.from(vsel.options).find(o => /Otoya|オトヤ/i.test(o.value) && /拡張|Enhanced|Premium/i.test(o.value))
+               || Array.from(vsel.options).find(o => /Otoya|オトヤ|Ichiro|Keita|Daichi|Hattori/i.test(o.value));
+  if (maleOpt) { vsel.value = maleOpt.value; store.voice = maleOpt.value; }
+  else { vsel.value = "auto"; store.voice = "auto"; }
+  $("rate").value = "0.88"; $("rateVal").textContent = "0.88"; store.rate = 0.88;
+  $("pitch").value = "-0.02"; $("pitchVal").textContent = "-0.02"; store.pitch = -0.02;
   $("into").value = "0.6"; $("intoVal").textContent = "0.6"; store.into = 0.6;
   // リアルタイム側: cedar(低く落ち着いた声)
   if (vvOk) {
@@ -1222,10 +1289,35 @@ $("baymaxVoiceBtn").addEventListener("click", () => {
     ttsReset();
     ttsEnqueue("こんにちは。私はベイマックス。あなたの健康を守ります。");
     ttsFinish(() => {});
-    toast("ベイマックスの声に調整しました(低め・ゆっくり)");
+    const hasMale = maleOpt != null;
+    toast(hasMale
+      ? "ベイマックスの声に調整しました(" + maleOpt.value + "・ゆっくり)"
+      : "男性の声が未導入です。iPhoneの設定→アクセシビリティ→読み上げコンテンツ→声→日本語で「Otoya(拡張)」を追加すると、ぐっと近づきます。", 6000);
   }
 });
+/* 声の種類リストを内蔵音声から取得して反映 */
+function populateVoices() {
+  if (!window.speechSynthesis) return;
+  const vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith("ja"));
+  const sel = $("voiceSel");
+  const cur = store.voice;
+  sel.innerHTML = '<option value="auto">自動(男性の声を優先)</option>';
+  for (const v of vs) {
+    const o = document.createElement("option");
+    o.value = v.name;
+    o.textContent = v.name + (/Otoya|オトヤ/i.test(v.name) ? " ← おすすめ(男性)" : "");
+    sel.appendChild(o);
+  }
+  if (cur !== "auto" && Array.from(sel.options).some(o => o.value === cur)) sel.value = cur;
+}
+if (window.speechSynthesis) {
+  populateVoices();
+  speechSynthesis.onvoiceschanged = populateVoices;
+}
+
 function applySettings() {
+  store.tone = $("toneSel").value;
+  store.voice = $("voiceSel").value;
   store.gkey = $("gKey").value.trim();
   store.gmodel = $("gModel").value.trim() || "gemini-2.5-flash";
   store.search = $("searchOn").checked;
@@ -1338,8 +1430,16 @@ function summonToggle() {
 function summon() {
   chime(523, 0.12, 0); chime(784, 0.14, 0.12);
   setMediaState("会話中");
-  if (store.engine === "realtime") startRealtimeSession({ greet: true });
-  else { sessionOn = true; updateMicUI(); ensureAudio(); startRecognition(); }
+  ensureAudio();
+  sessionOn = true; updateMicUI();
+  // 口調に合わせた第一声を返してから聞き取り開始
+  const g = pick((TONES[store.tone] || TONES.std).greet);
+  addMsg("ai", g);
+  lastResponseText = g;
+  ttsReset();
+  setState(S.SPEAKING);
+  ttsEnqueue(g);
+  ttsFinish(() => { if (sessionOn) { setState(S.LISTENING); startRecognition(); } });
 }
 function endConversation() {
   stopSession();
@@ -1399,6 +1499,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
 
 /* ---------------- 初期化 ---------------- */
 function initSettingsUI() {
+  $("toneSel").value = store.tone;
   $("gKey").value = store.gkey;
   $("gModel").value = store.gmodel === "gemini-2.5-flash" ? "" : store.gmodel;
   $("searchOn").checked = store.search;
