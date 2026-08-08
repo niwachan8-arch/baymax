@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v11</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v12</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -225,13 +225,15 @@
       <label>ベイマックスの人格(システムプロンプト)</label>
       <textarea id="sysPrompt"></textarea>
     </div>
-    <div class="field" style="display:none;">
-      <label>音声合成(VOICEVOX)</label>
-      <div class="vvstatus" style="margin-bottom:8px;"><span class="lamp" id="vvLamp"></span><span id="vvText">接続確認中…</span></div>
-      <select id="vvSpeaker"><option value="">(VOICEVOX未接続 — ブラウザ音声で代用)</option></select>
+    <div class="field">
+      <label>🏠 自宅の声サーバー(VOICEVOX・無制限イケボ)</label>
+      <div class="vvstatus" style="margin-bottom:8px;"><span class="lamp" id="vvLamp"></span><span id="vvText">未接続</span></div>
+      <input type="text" id="vvUrl" placeholder="https://〜.ts.net(声サーバーのURL)">
+      <select id="vvSpeaker" style="margin-top:8px;"><option value="">(声サーバー未接続)</option></select>
       <div class="hint">
-        <a href="https://voicevox.hiroshiba.jp/" target="_blank">VOICEVOX</a>(無料)をこのPCで起動しておくと自然な日本語音声になります。
-        未起動の場合はブラウザ標準音声で読み上げます。
+        自宅PC(Minisforum等)でVOICEVOXを動かすと、<b>回数無制限の本格男性声</b>が使えます。
+        設定手順は「声サーバー設定ガイド」を参照。接続中はこの声が最優先になり、
+        PCが起動していない時はGemini特別ボイス→内蔵声の順に自動フォールバックします。
       </div>
     </div>
     <div class="field">
@@ -384,6 +386,8 @@ const store = {
   set voice(v) { localStorage.setItem("jv_voice", v); },
   get svfull() { return localStorage.getItem("jv_svfull") !== "0"; },
   set svfull(v) { localStorage.setItem("jv_svfull", v ? "1" : "0"); },
+  get vvurl() { return (localStorage.getItem("jv_vvurl") || "http://127.0.0.1:50021").replace(/\/+$/, ""); },
+  set vvurl(v) { localStorage.setItem("jv_vvurl", v); },
 };
 
 /* ---------------- 口調プリセット(声はそのまま、話し方だけ着せ替え) ---------------- */
@@ -501,7 +505,7 @@ function svRateOk() {
   return svCallTimes.length < 3;
 }
 function svMarkCall() { svCallTimes.push(Date.now()); }
-function svFullActive() { return store.svfull && !!store.gkey; }
+function svFullActive() { return store.svfull && !!store.gkey && !vvOk; }
 function svNotice(msg) {
   if (!svNoticeShown) { svNoticeShown = true; addMsg("sys", "ℹ️ " + msg + " 内蔵の声で続けます(特別ボイスは自動で復帰します)。"); }
 }
@@ -543,7 +547,6 @@ let history = [];               // {role, content}
 let recognition = null;
 let recRestartTimer = null;
 let abortCtrl = null;           // Claudeストリーム中断用
-const VV_URL = "http://127.0.0.1:50021";
 let vvOk = false;
 
 function setState(s, sub) {
@@ -1087,7 +1090,7 @@ function ttsEnqueue(text) {
   const t = text.trim();
   if (!t) return;
   const gen = ttsGen;
-  const item = { text: t, sv: svCache.get(t) || null, promise: vvOk ? vvSynth(t).catch(() => null) : Promise.resolve(null) };
+  const item = { text: t, sv: vvOk ? null : (svCache.get(t) || null), promise: vvOk ? vvSynth(t).catch(() => null) : Promise.resolve(null) };
   ttsQueue.push(item);
   if (!ttsPlaying) ttsPlayLoop(gen);
 }
@@ -1111,13 +1114,13 @@ async function ttsPlayLoop(gen) {
 }
 async function vvSynth(text) {
   const sp = store.speaker;
-  const q = await fetch(VV_URL + "/audio_query?text=" + encodeURIComponent(text) + "&speaker=" + sp, { method: "POST" });
+  const q = await fetch(store.vvurl + "/audio_query?text=" + encodeURIComponent(text) + "&speaker=" + sp, { method: "POST" });
   if (!q.ok) throw new Error("vv query failed");
   const query = await q.json();
   query.speedScale = store.rate;
   query.pitchScale = store.pitch;
   query.intonationScale = store.into;
-  const s = await fetch(VV_URL + "/synthesis?speaker=" + sp, {
+  const s = await fetch(store.vvurl + "/synthesis?speaker=" + sp, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(query),
@@ -1185,12 +1188,12 @@ function speakSystem(text) {
 /* ---------------- VOICEVOX 接続確認 ---------------- */
 async function checkVoicevox() {
   try {
-    const r = await fetch(VV_URL + "/speakers", { signal: AbortSignal.timeout(2500) });
+    const r = await fetch(store.vvurl + "/speakers", { signal: AbortSignal.timeout(4000) });
     if (!r.ok) throw new Error();
     const speakers = await r.json();
     vvOk = true;
     $("vvLamp").classList.add("ok");
-    $("vvText").textContent = "VOICEVOX 接続済み";
+    $("vvText").textContent = "声サーバー接続中(無制限モード)";
     const sel = $("vvSpeaker");
     sel.innerHTML = "";
     for (const sp of speakers) {
@@ -1206,7 +1209,7 @@ async function checkVoicevox() {
   } catch (e) {
     vvOk = false;
     $("vvLamp").classList.remove("ok");
-    $("vvText").textContent = "VOICEVOX未接続(ブラウザ標準音声で代用中)";
+    $("vvText").textContent = "声サーバー未接続(特別ボイス/内蔵声で動作中)";
   }
 }
 setInterval(checkVoicevox, 15000);
@@ -1501,11 +1504,17 @@ $("voiceSel").addEventListener("change", () => {
   ttsFinish(() => {});
 });
 $("toneSel").addEventListener("change", () => { store.tone = $("toneSel").value; });
+$("vvUrl").addEventListener("change", () => {
+  store.vvurl = $("vvUrl").value.trim() || "http://127.0.0.1:50021";
+  $("vvText").textContent = "接続確認中…";
+  checkVoicevox();
+});
 $("rate").addEventListener("change", () => { store.rate = parseFloat($("rate").value); });
 $("pitch").addEventListener("change", () => { store.pitch = parseFloat($("pitch").value); });
 $("into").addEventListener("change", () => { store.into = parseFloat($("into").value); });
 
 function applySettings() {
+  store.vvurl = $("vvUrl").value.trim() || "http://127.0.0.1:50021";
   store.tone = $("toneSel").value;
   store.voice = $("voiceSel").value;
   store.gkey = $("gKey").value.trim();
@@ -1690,6 +1699,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
 
 /* ---------------- 初期化 ---------------- */
 function initSettingsUI() {
+  $("vvUrl").value = store.vvurl === "http://127.0.0.1:50021" ? "" : store.vvurl;
   $("toneSel").value = store.tone;
   $("gKey").value = store.gkey;
   $("gModel").value = store.gmodel === "gemini-2.5-flash" ? "" : store.gmodel;
