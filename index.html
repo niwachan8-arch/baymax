@@ -174,7 +174,7 @@
     <div class="dot"></div>
     <div>
       <h1>BAYMAX</h1>
-      <small>Personal Healthcare Companion <span id="appVer">v18</span></small>
+      <small>Personal Healthcare Companion <span id="appVer">v19</span></small>
     </div>
   </div>
   <div class="hbtns">
@@ -273,6 +273,7 @@
         <option value="mid">普通(+ 90分に一度くらい雑談)</option>
         <option value="high">おしゃべり(+ 40分に一度くらい)</option>
         <option value="max">パートナー(+ 15分に一度、プッシュ型のおすすめ情報)</option>
+        <option value="ultra">相棒MAX(+ 5分に一度、常に隣で気にかけてくれる)</option>
       </select>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="svFullOn" checked> 🌟 会話の本文も特別ボイスで話す(上限時は内蔵声に自動切替)</label>
       <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="handsFree" checked> ハンズフリー会話(返答後、自動で聞き取り再開)</label>
@@ -1711,7 +1712,7 @@ async function proactiveTick() {
   }
   if (proTimes.care === 0) proTimes.care = now; // 初回は起点だけ記録
   // 4) 自発的な雑談(Gemini・頻度設定に応じて)
-  const chatGapMin = store.profreq === "max" ? 15 : store.profreq === "high" ? 40 : store.profreq === "low" ? 0 : 90;
+  const chatGapMin = store.profreq === "ultra" ? 5 : store.profreq === "max" ? 15 : store.profreq === "high" ? 40 : store.profreq === "low" ? 0 : 90;
   if (chatGapMin > 0 && now - proTimes.chat > chatGapMin * 60 * 1000) {
     proTimes.chat = now;
     const line = await proactiveChat();
