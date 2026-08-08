@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Baymax">
+<meta name="theme-color" content="#060b14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>BAYMAX — Personal Care Companion</title>
+<style>
+  :root {
+    --bg: #060b14;
+    --panel: #1c1214;
+    --panel2: #2a1a1c;
+    --cyan: #ff7a6e;
+    --cyan-dim: #a04036;
+    --gold: #ffc76b;
+    --text: #d9ecf5;
+    --muted: #6f8ba0;
+    --danger: #ff6b6b;
+    --ok: #5ee6a8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 800px at 50% -10%, #2a1416 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Noto Sans JP", "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(255,122,110,.12);
+    flex: 0 0 auto;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 12px var(--cyan);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:1} }
+  .brand h1 {
+    font-size: 15px; letter-spacing: .35em; font-weight: 600; color: var(--cyan);
+    text-shadow: 0 0 18px rgba(255,122,110,.45);
+  }
+  .brand small { color: var(--muted); letter-spacing: .12em; font-size: 10px; display:block; margin-top:2px;}
+  .hbtns { display: flex; gap: 8px; }
+  button {
+    font-family: inherit; cursor: pointer; border: 1px solid rgba(255,122,110,.25);
+    background: rgba(255,122,110,.06); color: var(--text);
+    padding: 7px 14px; border-radius: 8px; font-size: 12.5px;
+    transition: all .18s;
+  }
+  button:hover { background: rgba(255,122,110,.16); border-color: rgba(255,122,110,.5); }
+  button.primary { background: rgba(255,122,110,.18); border-color: var(--cyan); color: #eafaff; }
+  button.danger { border-color: rgba(255,107,107,.4); color: #ffc9c9; background: rgba(255,107,107,.08); }
+  button:disabled { opacity:.4; cursor: default; }
+
+  main { flex: 1 1 auto; display: flex; min-height: 0; }
+
+  /* ---- left: orb + controls ---- */
+  #stage {
+    flex: 0 0 46%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 18px; position: relative; padding: 20px;
+  }
+  #orbWrap { position: relative; width: min(340px, 60vw); aspect-ratio: 1; }
+  canvas#orb { width: 100%; height: 100%; display: block; }
+  #statusText {
+    font-size: 14px; letter-spacing: .25em; color: var(--cyan);
+    text-transform: uppercase; min-height: 20px; text-align: center;
+    text-shadow: 0 0 14px rgba(255,122,110,.4);
+  }
+  #subStatus { font-size: 12px; color: var(--muted); min-height: 18px; text-align: center; max-width: 90%; }
+  .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  #micBtn {
+    width: 74px; height: 74px; border-radius: 50%; font-size: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--cyan-dim);
+    background: radial-gradient(circle at 35% 30%, rgba(255,122,110,.25), rgba(255,122,110,.05));
+  }
+  #micBtn.on {
+    border-color: var(--cyan);
+    box-shadow: 0 0 26px rgba(255,122,110,.55), inset 0 0 18px rgba(255,122,110,.25);
+  }
+  .toggleRow { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); user-select:none; cursor:pointer;}
+  .toggleRow input { accent-color: var(--cyan); width:15px; height:15px; cursor:pointer;}
+
+  /* ---- right: chat ---- */
+  #chatCol { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; border-left: 1px solid rgba(255,122,110,.1); }
+  #log { flex: 1 1 auto; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; scroll-behavior: smooth; }
+  .msg { max-width: 86%; line-height: 1.65; font-size: 14px; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: rgba(255,199,107,.1); border: 1px solid rgba(255,199,107,.25); color: #ffe9c4; border-bottom-right-radius: 3px; }
+  .msg.ai { align-self: flex-start; background: rgba(255,122,110,.07); border: 1px solid rgba(255,122,110,.2); border-bottom-left-radius: 3px; }
+  .msg.sys { align-self: center; background: none; border: none; color: var(--muted); font-size: 12px; text-align: center; }
+  .msg .who { font-size: 10px; letter-spacing: .2em; color: var(--muted); display: block; margin-bottom: 4px; }
+  #inputBar { flex: 0 0 auto; display: flex; gap: 10px; padding: 14px 18px; border-top: 1px solid rgba(255,122,110,.1); background: rgba(6,11,20,.6); }
+  #textInput {
+    flex: 1; background: var(--panel); color: var(--text); border: 1px solid rgba(255,122,110,.2);
+    border-radius: 10px; padding: 11px 14px; font-size: 14px; font-family: inherit; outline: none;
+  }
+  #textInput:focus { border-color: rgba(255,122,110,.55); box-shadow: 0 0 0 3px rgba(255,122,110,.08); }
+
+  /* ---- settings drawer ---- */
+  #settings {
+    position: fixed; top: 0; right: -420px; width: 400px; max-width: 94vw; height: 100%;
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+    border-left: 1px solid rgba(255,122,110,.25); z-index: 50;
+    transition: right .28s ease; display: flex; flex-direction: column;
+    box-shadow: -20px 0 60px rgba(0,0,0,.5);
+  }
+  #settings.open { right: 0; }
+  #settings .shead { display:flex; justify-content:space-between; align-items:center; padding: 16px 18px; border-bottom: 1px solid rgba(255,122,110,.15); }
+  #settings .shead h2 { font-size: 14px; letter-spacing: .2em; color: var(--cyan); }
+  #settings .sbody { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  .field label { display:block; font-size: 11.5px; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: rgba(6,11,20,.7); border: 1px solid rgba(255,122,110,.22);
+    color: var(--text); border-radius: 8px; padding: 9px 11px; font-size: 13px; font-family: inherit; outline: none;
+  }
+  .field textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: rgba(255,122,110,.6); }
+  .hint { font-size: 11px; color: var(--muted); line-height: 1.55; margin-top: 5px; }
+  .hint a { color: var(--cyan); }
+  .vvstatus { font-size: 12px; display: flex; align-items: center; gap: 7px; }
+  .vvstatus .lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+  .vvstatus .lamp.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: #3a1f1f; border: 1px solid rgba(255,122,110,.4); color: var(--text);
+    padding: 11px 18px; border-radius: 10px; font-size: 13px; z-index: 99;
+    transition: transform .25s; max-width: 86vw; box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  @media (max-width: 760px) {
+    main { flex-direction: column; }
+    #stage { flex: 0 0 auto; padding: 8px; gap: 10px; }
+    #orbWrap { width: 130px; }
+    #chatCol { border-left: none; border-top: 1px solid rgba(255,122,110,.1); }
+    #micBtn { width: 64px; height: 64px; font-size: 26px; }
+    header { padding: max(10px, env(safe-area-inset-top)) 14px 10px; }
+    #inputBar { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+    button { padding: 9px 14px; }
+  }
+
+  /* ---- ポケットモード ---- */
+  #pocket {
+    position: fixed; inset: 0; background: #000; z-index: 200; display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  }
+  #pocket.on { display: flex; }
+  #pocket .pstatus { color: #1d3a4a; font-size: 15px; letter-spacing: .3em; }
+  #pocket .pdot { width: 10px; height: 10px; border-radius: 50%; background: #12303f; animation: pulse 3s infinite; }
+  #pocket .phint { position: absolute; bottom: max(28px, env(safe-area-inset-bottom)); color: #14232d; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="dot"></div>
+    <div>
+      <h1>BAYMAX</h1>
+      <small>Personal Healthcare Companion</small>
+    </div>
+  </div>
+  <div class="hbtns">
+    <button id="clearBtn" title="会話履歴をリセット">履歴クリア</button>
+    <button id="settingsBtn" class="primary">⚙ 設定</button>
+  </div>
+</header>
+
+<main>
+  <section id="stage">
+    <div id="orbWrap"><canvas id="orb"></canvas></div>
+    <div id="statusText">STANDBY</div>
+    <div id="subStatus">マイクボタンを押して会話を開始</div>
+    <div class="controls">
+      <button id="micBtn" title="会話を開始/停止">🎙</button>
+    </div>
+    <label class="toggleRow"><input type="checkbox" id="handsFree" checked> ハンズフリー会話(返答後、自動で聞き取り再開)</label>
+    <div class="controls" id="mobileExtras" style="display:none;">
+      <button id="standbyBtn" class="primary">🎧 イヤホン待機を開始</button>
+      <button id="pocketBtn">🌙 ポケットモード</button>
+    </div>
+  </section>
+
+  <section id="chatCol">
+    <div id="log"></div>
+    <div id="inputBar">
+      <input id="textInput" type="text" placeholder="テキストでも話しかけられます…" autocomplete="off">
+      <button id="sendBtn" class="primary">送信</button>
+    </div>
+  </section>
+</main>
+
+<aside id="settings">
+  <div class="shead">
+    <h2>SETTINGS</h2>
+    <button id="closeSettings">✕ 閉じる</button>
+  </div>
+  <div class="sbody">
+    </div>
+    <div class="field" id="fGeminiKey">
+      <label>Gemini APIキー(無料)</label>
+      <input type="password" id="gKey" placeholder="AIza...">
+      <div class="hint">
+        <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> で取得。
+        Googleアカウントがあれば<b>クレジットカード不要・無料</b>です(1日1,500回・毎分15回まで)。
+      </div>
+      <input type="text" id="gModel" placeholder="モデルID(既定: gemini-2.5-flash)" style="margin-top:8px;">
+    </div>
+                        <div class="field">
+      <label>あなたの呼び名</label>
+      <input type="text" id="userName" placeholder="例: タカ様">
+    </div>
+    <div class="field">
+      <label>ベイマックスの人格(システムプロンプト)</label>
+      <textarea id="sysPrompt"></textarea>
+    </div>
+    <div class="field" style="display:none;">
+      <label>音声合成(VOICEVOX)</label>
+      <div class="vvstatus" style="margin-bottom:8px;"><span class="lamp" id="vvLamp"></span><span id="vvText">接続確認中…</span></div>
+      <select id="vvSpeaker"><option value="">(VOICEVOX未接続 — ブラウザ音声で代用)</option></select>
+      <div class="hint">
+        <a href="https://voicevox.hiroshiba.jp/" target="_blank">VOICEVOX</a>(無料)をこのPCで起動しておくと自然な日本語音声になります。
+        未起動の場合はブラウザ標準音声で読み上げます。
+      </div>
+    </div>
+    <div class="field">
+      <label>アシスタント機能</label>
+      <label class="toggleRow" style="margin-bottom:8px;"><input type="checkbox" id="searchOn"> Google検索で最新情報に答える(ニュース・天気など)</label>
+      <label class="toggleRow"><input type="checkbox" id="bargeinOn"> 割り込み発話(応答中に話しかけて遮れる・イヤホン推奨)</label>
+      <div class="hint" style="margin-top:8px;">
+        「◯◯を覚えておいて」で記憶に保存、「記憶を消して」で全消去。
+        時刻・タイマー(「3分タイマー」)・計算は通信なしで即答します。
+      </div>
+      <button id="memClear" style="margin-top:8px; width:100%;">🧠 記憶をリセット(<span id="memCount">0</span>件)</button>
+    </div>
+    <div class="field">
+      <button id="baymaxVoiceBtn" class="primary" style="width:100%;">🤍 ベイマックスの声にする(ワンタップ調整)</button>
+      <div class="hint">低めの穏やかな声・ゆっくり・抑揚控えめ に一括設定します(両エンジン対応)。</div>
+    </div>
+    <div class="field">
+      <label>話す速さ <span id="rateVal" style="color:var(--cyan)">1.1</span></label>
+      <input type="range" id="rate" min="0.7" max="1.6" step="0.05" value="1.1">
+    </div>
+    <div class="field">
+      <label>声の高さ <span id="pitchVal" style="color:var(--cyan)">0</span></label>
+      <input type="range" id="pitch" min="-0.1" max="0.1" step="0.01" value="0">
+    </div>
+    <div class="field">
+      <label>抑揚(VOICEVOX利用時のみ) <span id="intoVal" style="color:var(--cyan)">1.0</span></label>
+      <input type="range" id="into" min="0.2" max="1.4" step="0.05" value="1.0">
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button id="saveSettings" class="primary" style="flex:1;">保存</button>
+      <button id="testVoice" style="flex:1;">音声テスト</button>
+    </div>
+  </div>
+</aside>
+
+<div id="armOverlay" style="position:fixed; inset:0; z-index:300; display:none; flex-direction:column; align-items:center; justify-content:center; gap:22px; background:rgba(4,8,16,.96); cursor:pointer;">
+  <div style="width:120px; height:120px; border-radius:50%; border:2px solid var(--cyan); display:flex; align-items:center; justify-content:center; font-size:44px; box-shadow:0 0 40px rgba(255,122,110,.5), inset 0 0 24px rgba(255,122,110,.25); animation:pulse 1.8s infinite;">🎧</div>
+  <div style="color:var(--cyan); letter-spacing:.2em; font-size:15px;" id="armText">タップして起動</div>
+  <div style="color:var(--muted); font-size:12px;">(iOSの制限により、起動後に1タップだけ必要です)</div>
+</div>
+
+<div id="pocket">
+  <div class="pdot"></div>
+  <div class="pstatus" id="pocketStatus">STANDBY</div>
+  <div class="phint">ダブルタップで画面に戻る</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================
+   BAYMAX — 連続音声会話ケア・コンパニオン
+   音声認識(Web Speech API) → Claude(ストリーミング) → VOICEVOX
+   ========================================================= */
+
+const $ = id => document.getElementById(id);
+const logEl = $("log"), statusText = $("statusText"), subStatus = $("subStatus");
+
+/* ---------------- 設定 ---------------- */
+const DEFAULT_SYS = `あなたは「ベイマックス」。穏やかで心優しいパーソナル・ケア・コンパニオンです。
+- 応答は音声で読み上げられます。です・ます調の話し言葉で、3文以内・前置きなしで答えてください。
+- 箇条書き・記号・マークダウン・絵文字は使わないでください。
+- 「スキャンしました」「確認しました」といった表現を自然に織り交ぜてください。
+- 穏やかでゆったりした、包み込むような口調。話題に応じた温かみ(驚き・心配・控えめなユーモア)を添え、ユーザーの体調や気持ちをさりげなく気遣ってください。少し天然で literal な愛嬌があっても構いません。
+- 数字や専門用語は日常のもので言い換えてください(例: 38度→お風呂のお湯より熱い)。ニュースは買い物・通勤・天気など日常場面に結びつけてください。
+- 最新の出来事はGoogle検索の結果に基づいて答え、わからないことは正直にわからないと言ってください。作り話は禁止です。
+- ユーザーのことは設定された呼び名で呼んでください。
+- ユーザーが「もう大丈夫だよ」と言ったら、短く温かいお別れの言葉を返してください。
+- 「スリープ」と言われたら短く待機する旨を返してください。`;
+
+const store = {
+  get k() { return localStorage.getItem("jv_apikey") || ""; },
+  set k(v) { localStorage.setItem("jv_apikey", v); },
+  get model() { return localStorage.getItem("jv_model") || "claude-sonnet-4-5"; },
+  set model(v) { localStorage.setItem("jv_model", v); },
+  get customModel() { return localStorage.getItem("jv_custom_model") || ""; },
+  set customModel(v) { localStorage.setItem("jv_custom_model", v); },
+  get name() { return localStorage.getItem("jv_name") || "タカ様"; },
+  set name(v) { localStorage.setItem("jv_name", v); },
+  get sys() { return localStorage.getItem("jv_sys") || DEFAULT_SYS; },
+  set sys(v) { localStorage.setItem("jv_sys", v); },
+  get speaker() { return localStorage.getItem("jv_speaker") || "13"; },
+  set speaker(v) { localStorage.setItem("jv_speaker", v); },
+  get rate() { return parseFloat(localStorage.getItem("jv_rate") || "1.1"); },
+  set rate(v) { localStorage.setItem("jv_rate", String(v)); },
+  get pitch() { return parseFloat(localStorage.getItem("jv_pitch") || "0"); },
+  set pitch(v) { localStorage.setItem("jv_pitch", String(v)); },
+  get into() { return parseFloat(localStorage.getItem("jv_into") || "1.0"); },
+  set into(v) { localStorage.setItem("jv_into", String(v)); },
+  get engine() { return "gemini"; },
+  set engine(v) {},
+  get okey() { return localStorage.getItem("jv_oaikey") || ""; },
+  set okey(v) { localStorage.setItem("jv_oaikey", v); },
+  get ovoice() { return localStorage.getItem("jv_oaivoice") || "cedar"; },
+  set ovoice(v) { localStorage.setItem("jv_oaivoice", v); },
+  get omodel() { return localStorage.getItem("jv_oaimodel") || "gpt-realtime-2.1"; },
+  set omodel(v) { localStorage.setItem("jv_oaimodel", v); },
+  get gkey() { return localStorage.getItem("jv_gkey") || ""; },
+  set gkey(v) { localStorage.setItem("jv_gkey", v); },
+  get gmodel() { return localStorage.getItem("jv_gmodel") || "gemini-2.5-flash"; },
+  set gmodel(v) { localStorage.setItem("jv_gmodel", v); },
+  get lurl() { return localStorage.getItem("jv_lurl") || "http://localhost:11434/v1"; },
+  set lurl(v) { localStorage.setItem("jv_lurl", v); },
+  get lmodel() { return localStorage.getItem("jv_lmodel") || "gemma3:4b"; },
+  set lmodel(v) { localStorage.setItem("jv_lmodel", v); },
+  get profile() { try { return JSON.parse(localStorage.getItem("jv_profile") || "[]"); } catch (e) { return []; } },
+  set profile(v) { localStorage.setItem("jv_profile", JSON.stringify(v)); },
+  get search() { return localStorage.getItem("jv_search") !== "0"; },
+  set search(v) { localStorage.setItem("jv_search", v ? "1" : "0"); },
+  get bargein() { return localStorage.getItem("jv_bargein") !== "0"; },
+  set bargein(v) { localStorage.setItem("jv_bargein", v ? "1" : "0"); },
+};
+function activeModel() {
+  return store.model === "custom" ? (store.customModel || "claude-sonnet-4-5") : store.model;
+}
+
+/* ---------------- 状態 ---------------- */
+const S = { IDLE:"IDLE", LISTENING:"LISTENING", THINKING:"THINKING", SPEAKING:"SPEAKING", SLEEPING:"SLEEPING" };
+let state = S.IDLE;
+let sessionOn = false;          // マイクセッションが有効か
+let history = [];               // {role, content}
+let recognition = null;
+let recRestartTimer = null;
+let abortCtrl = null;           // Claudeストリーム中断用
+const VV_URL = "http://127.0.0.1:50021";
+let vvOk = false;
+
+function setState(s, sub) {
+  state = s;
+  const map = {
+    IDLE: ["STANDBY", "マイクボタンを押して会話を開始"],
+    LISTENING: ["LISTENING", "どうぞお話しください…"],
+    THINKING: ["PROCESSING", "考えています…"],
+    SPEAKING: ["RESPONDING", "応答中(話しかけると次の聞き取りへ)"],
+    SLEEPING: ["SLEEP MODE", "「ベイマックス」と呼びかけると起動します"],
+  };
+  statusText.textContent = map[s][0];
+  subStatus.textContent = sub || map[s][1];
+  const p = document.getElementById("pocketStatus");
+  if (p) p.textContent = map[s][0];
+}
+
+/* ---------------- ログ表示 ---------------- */
+function addMsg(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg " + (role === "user" ? "user" : role === "ai" ? "ai" : "sys");
+  if (role !== "sys") {
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = role === "user" ? "YOU" : "BAYMAX";
+    div.appendChild(who);
+  }
+  div.appendChild(document.createTextNode(text));
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+  return div;
+}
+function toast(msg, ms = 3200) {
+  const t = $("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._tm);
+  t._tm = setTimeout(() => t.classList.remove("show"), ms);
+}
+
+/* ---------------- オーブ(ビジュアライザー) ---------------- */
+const orb = $("orb"), octx = orb.getContext("2d");
+let audioCtx = null, analyser = null, level = 0;
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+function drawOrb(ts) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = orb.clientWidth, h = orb.clientHeight;
+  if (orb.width !== w * dpr) { orb.width = w * dpr; orb.height = h * dpr; }
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2, base = Math.min(w, h) / 2;
+
+  // 音声レベル取得
+  let amp = 0;
+  if (analyser && state === S.SPEAKING) {
+    const arr = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(arr);
+    amp = arr.reduce((a, b) => a + b, 0) / arr.length / 255;
+  } else if (state === S.LISTENING) {
+    amp = 0.10 + 0.06 * Math.sin(ts / 300);
+  } else if (state === S.THINKING) {
+    amp = 0.14 + 0.10 * Math.abs(Math.sin(ts / 180));
+  }
+  level += (amp - level) * 0.25;
+
+  const col = state === S.SLEEPING ? "rgba(110,130,150," : "rgba(255,122,110,";
+  // 外周リング
+  for (let i = 0; i < 3; i++) {
+    const r = base * (0.62 + i * 0.13) + level * base * 0.25;
+    octx.beginPath();
+    octx.arc(cx, cy, r, ts / (900 + i * 400) % (Math.PI * 2), ts / (900 + i * 400) % (Math.PI * 2) + Math.PI * (1.1 + i * 0.25));
+    octx.strokeStyle = col + (0.18 - i * 0.04) + ")";
+    octx.lineWidth = 2.2 - i * 0.5;
+    octx.stroke();
+  }
+  // 目盛りリング
+  octx.save();
+  octx.translate(cx, cy);
+  octx.rotate(ts / 4000);
+  for (let i = 0; i < 60; i++) {
+    octx.rotate(Math.PI / 30);
+    octx.beginPath();
+    const r1 = base * 0.56, r2 = r1 + (i % 5 === 0 ? 9 : 4);
+    octx.moveTo(r1, 0); octx.lineTo(r2, 0);
+    octx.strokeStyle = col + "0.35)";
+    octx.lineWidth = 1;
+    octx.stroke();
+  }
+  octx.restore();
+  // コア
+  const coreR = base * (0.30 + level * 0.35);
+  const grad = octx.createRadialGradient(cx, cy, coreR * 0.1, cx, cy, coreR);
+  grad.addColorStop(0, "rgba(255,244,240,0.95)");
+  grad.addColorStop(0.45, col + "0.75)");
+  grad.addColorStop(1, col + "0)");
+  octx.beginPath();
+  octx.arc(cx, cy, coreR, 0, Math.PI * 2);
+  octx.fillStyle = grad;
+  octx.fill();
+  requestAnimationFrame(drawOrb);
+}
+requestAnimationFrame(drawOrb);
+
+/* ---------------- 音声認識 ---------------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function startRecognition(keepState) {
+  if (!SR) { toast("このブラウザは音声認識に未対応です。Chromeをご利用ください。"); return; }
+  if (recognition) { try { recognition.abort(); } catch(e){} }
+  recognition = new SR();
+  recognition.lang = "ja-JP";
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  let finalText = "";
+  recognition.onresult = (ev) => {
+    let interim = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const r = ev.results[i];
+      if (r.isFinal) finalText += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    if (interim) subStatus.textContent = "「" + interim + "」";
+  };
+  recognition.onend = () => {
+    recognition = null;
+    const text = finalText.trim();
+    if (!sessionOn) return;
+    if (text) {
+      if (state === S.SPEAKING) {
+        // バージイン(割り込み発話): 再生中の自分の声の拾い込みは無視する
+        if (text.length >= 4 && !normJa(lastResponseText).includes(normJa(text))) {
+          ttsReset();
+          chime(880, 0.08, 0);
+          handleUtterance(text);
+        } else if (store.bargein) {
+          scheduleBargeInRestart();
+        }
+      } else {
+        handleUtterance(text);
+      }
+    } else if (state === S.LISTENING || state === S.SLEEPING) {
+      scheduleRelisten(150); // 無音→聞き直し
+    } else if (state === S.SPEAKING && store.bargein) {
+      scheduleBargeInRestart(); // 応答中は割り込み監視を継続
+    }
+  };
+  recognition.onerror = (ev) => {
+    if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+      sessionOn = false; updateMicUI();
+      setState(S.IDLE);
+      toast("マイクの使用が許可されていません。ブラウザのマイク許可を確認してください。", 5000);
+    }
+    // "no-speech"/"aborted" は onend 側で再開処理
+  };
+  try { recognition.start(); } catch(e) {}
+  if (!keepState && state !== S.SLEEPING) setState(S.LISTENING);
+}
+/* バージイン(前作PC版から移植): 応答が30文字以上のときだけ監視(短い応答での誤検知防止) */
+function startBargeIn() {
+  if (!store.bargein || !sessionOn) return;
+  bargeInTimer = setTimeout(() => {
+    if (state === S.SPEAKING && sessionOn) startRecognition(true);
+  }, 1200); // 短い応答は監視前に読み終わるため、実質30文字以上の応答のみ監視対象になる
+}
+let bargeInTimer = null;
+function scheduleBargeInRestart() {
+  clearTimeout(bargeInTimer);
+  bargeInTimer = setTimeout(() => {
+    if (state === S.SPEAKING && sessionOn && store.bargein) startRecognition(true);
+  }, 250);
+}
+function stopRecognition() {
+  clearTimeout(recRestartTimer);
+  try { clearTimeout(bargeInTimer); } catch (e) {}
+  if (recognition) { try { recognition.abort(); } catch(e){} recognition = null; }
+}
+function scheduleRelisten(delay) {
+  clearTimeout(recRestartTimer);
+  recRestartTimer = setTimeout(() => {
+    if (sessionOn && state !== S.THINKING && state !== S.SPEAKING) startRecognition();
+  }, delay);
+}
+
+/* ---------------- 発話ハンドリング ---------------- */
+function handleUtterance(text) {
+  // 会話の終了(「もう大丈夫だよ」等)→ お別れの一言 → イヤホン待機へ戻る
+  const plain = text.replace(/[。、！？!?\s]/g, "");
+  if (/もう大丈夫|会話(を)?終了|これで(終わり|おわり)|じゃあね|またね|おやすみ|スリープ/.test(plain) && plain.length <= 15) {
+    const byes = [
+      "確認しました。またいつでも呼んでくださいね。お大事に。",
+      "はい。ゆっくり休んでくださいね。また何かあればお呼びください。",
+      "わかりました。あなたの健康を、いつでも見守っていますよ。",
+    ];
+    const bye = byes[Math.floor(Math.random() * byes.length)];
+    addMsg("user", text);
+    addMsg("ai", bye);
+    history.push({ role: "user", content: text }, { role: "assistant", content: bye });
+    lastResponseText = bye;
+    stopRecognition();
+    ttsReset();
+    setState(S.SPEAKING);
+    ttsEnqueue(bye);
+    ttsFinish(() => endConversation()); // 待機中ならイヤホン待機へ、そうでなければ停止
+    return;
+  }
+  sendToClaude(text);
+}
+
+/* ---------------- 頭脳エンジン(ストリーミング) ---------------- */
+function sysPromptNow() {
+  let s = store.sys + "\nユーザーの呼び名: " + store.name + "\n現在日時: " + new Date().toLocaleString("ja-JP");
+  const p = store.profile;
+  if (p.length) s += "\nユーザーについて覚えていること:\n- " + p.join("\n- ");
+  return s;
+}
+/* ひらがな→カタカナ正規化(ウェイクワード・エコー判定用) */
+function normJa(s) {
+  return (s || "").replace(/[ぁ-ん]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)).replace(/[、。！？!?\s・]/g, "");
+}
+function isWakeWord(text) {
+  const n = normJa(text);
+  return ["ベイマックス", "ベーマックス", "ベイマクス", "ペイマックス", "ヘイマックス", "ベイバックス", "BAYMAX"].some(w => n.toUpperCase().includes(w));
+}
+function brainKeyMissing() {
+  if (store.engine === "gemini" && !store.gkey) return "Gemini APIキー(無料)";
+  if (store.engine === "claude" && !store.k) return "Anthropic APIキー";
+  return null;
+}
+function brainConfig() {
+  // エンジンごとのリクエスト構成とストリーム差分の取り出し方
+  if (store.engine === "gemini") {
+    const model = store.gmodel || "gemini-2.5-flash";
+    return {
+      url: "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model)
+           + ":streamGenerateContent?alt=sse&key=" + encodeURIComponent(store.gkey),
+      headers: { "content-type": "application/json" },
+      body: {
+        system_instruction: { parts: [{ text: sysPromptNow() }] },
+        contents: history.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+        generationConfig: { maxOutputTokens: 1024 },
+      },
+      extract: (ev) => {
+        if (ev.error) throw new Error(ev.error.message || "Geminiエラー");
+        const parts = ev.candidates && ev.candidates[0] && ev.candidates[0].content && ev.candidates[0].content.parts;
+        return parts ? parts.map(p => p.text || "").join("") : "";
+      },
+    };
+  }
+  if (store.engine === "local") {
+    return {
+      url: (store.lurl || "http://localhost:11434/v1").replace(/\/+$/, "") + "/chat/completions",
+      headers: { "content-type": "application/json" },
+      body: {
+        model: store.lmodel || "gemma3:4b",
+        stream: true,
+        messages: [{ role: "system", content: sysPromptNow() }].concat(history),
+      },
+      extract: (ev) => (ev.choices && ev.choices[0] && ev.choices[0].delta && ev.choices[0].delta.content) || "",
+    };
+  }
+  return {
+    url: "https://api.anthropic.com/v1/messages",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": store.k,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: { model: activeModel(), max_tokens: 1024, stream: true, system: sysPromptNow(), messages: history },
+    extract: (ev) => {
+      if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") return ev.delta.text;
+      if (ev.type === "error") throw new Error((ev.error && ev.error.message) || "ストリームエラー");
+      return "";
+    },
+  };
+}
+/* ---------------- ローカルハンドラ(Geminiを呼ばずに即答) ---------------- */
+let timerObjs = [];
+function localHandle(text) {
+  const t = text.trim();
+  // 記憶(プロファイル)
+  if (/記憶を(消して|リセット|クリア)|全部忘れて/.test(t)) {
+    store.profile = [];
+    return "確認しました。記憶をリセットしました。";
+  }
+  if (/覚えて(おいて|ね|て)?/.test(t) && !/覚えてる|覚えていますか/.test(t)) {
+    const content = t.replace(/(ねえ|ねぇ|OK|オーケー)?\s*(ベイマックス|べいまっくす)[、,]?/gi, "")
+                     .replace(/(を|って|と)?覚えて(おいて|ね|て)?(ください)?[。.]?$/, "").trim();
+    if (content.length >= 2) {
+      const p = store.profile; p.push(content); store.profile = p.slice(-30);
+      return "スキャンしました。「" + content + "」ですね。覚えておきます。";
+    }
+  }
+  // 時刻・日付
+  if (/(今|いま)何時|何時ですか/.test(t)) {
+    const d = new Date();
+    return "今は" + d.getHours() + "時" + d.getMinutes() + "分です。";
+  }
+  if (/今日(は|の)?(何日|日付|何曜日)/.test(t)) {
+    const d = new Date(), w = "日月火水木金土"[d.getDay()];
+    return "今日は" + (d.getMonth() + 1) + "月" + d.getDate() + "日、" + w + "曜日です。";
+  }
+  // タイマー
+  let m = t.match(/(\d+)\s*(分|秒)(半)?の?タイマー/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    let ms = m[2] === "分" ? n * 60000 : n * 1000;
+    if (m[3]) ms += 30000;
+    const label = m[1] + m[2] + (m[3] || "");
+    const to = setTimeout(() => {
+      timerObjs = timerObjs.filter(x => x.timeout !== to);
+      chime(784, 0.15, 0); chime(784, 0.15, 0.25); chime(1046, 0.3, 0.5);
+      const msg = label + "のタイマーが終了しました。";
+      addMsg("ai", msg);
+      ttsReset(); ttsEnqueue(msg);
+      ttsFinish(() => {
+        if (sessionOn && $("handsFree").checked) { setState(S.LISTENING); scheduleRelisten(250); }
+      });
+    }, ms);
+    timerObjs.push({ timeout: to, label });
+    return "確認しました。" + label + "のタイマーを開始します。";
+  }
+  if (/タイマー(を)?(キャンセル|停止|止めて|取り消)/.test(t)) {
+    if (!timerObjs.length) return "動いているタイマーはありませんよ。";
+    timerObjs.forEach(x => clearTimeout(x.timeout)); timerObjs = [];
+    return "タイマーをキャンセルしました。";
+  }
+  // 電卓(四則演算・消費税)
+  m = t.match(/(\d+(?:\.\d+)?)円?の消費税(込み)?/);
+  if (m) {
+    const v = parseFloat(m[1]);
+    return m[2] ? "税込みで" + Math.round(v * 1.1) + "円です。"
+                : "消費税は" + Math.round(v * 0.1) + "円、税込みだと" + Math.round(v * 1.1) + "円です。";
+  }
+  if (/^[\d\s\+\-×÷\*\/\(\)\.,は=いくつら?？]+$/.test(t) && /\d\s*[\+\-×÷\*\/]\s*\d/.test(t.replace(/,/g, ""))) {
+    try {
+      const expr = t.replace(/,/g, "").replace(/×/g, "*").replace(/÷/g, "/").replace(/[^0-9\+\-\*\/\(\)\.]/g, "");
+      const val = Function('"use strict";return (' + expr + ')')();
+      if (isFinite(val)) return "計算しました。答えは" + (Math.round(val * 100) / 100).toLocaleString("ja-JP") + "です。";
+    } catch (e) {}
+  }
+  return null;
+}
+
+/* ---------------- Gemini呼び出し(4段フォールバックチェーン) ---------------- */
+const GEMINI_CHAIN = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite"];
+let lastResponseText = "";
+
+async function sendToClaude(userText) {
+  const missing = brainKeyMissing();
+  if (missing) {
+    addMsg("sys", missing + "が未設定です。右上の「⚙ 設定」から設定してください。");
+    openSettings();
+    setState(sessionOn ? S.LISTENING : S.IDLE);
+    if (sessionOn) scheduleRelisten(300);
+    return;
+  }
+  stopRecognition();
+  addMsg("user", userText);
+  // ローカルハンドラ(時刻・タイマー・計算・記憶は即答)
+  const local = localHandle(userText);
+  if (local !== null) {
+    history.push({ role: "user", content: userText }, { role: "assistant", content: local });
+    if (history.length > 30) history = history.slice(-30);
+    addMsg("ai", local);
+    lastResponseText = local;
+    ttsReset();
+    setState(S.SPEAKING);
+    ttsEnqueue(local);
+    ttsFinish(() => afterResponse());
+    return;
+  }
+  history.push({ role: "user", content: userText });
+  if (history.length > 30) history = history.slice(-30);
+  setState(S.THINKING);
+
+  const aiDiv = addMsg("ai", "");
+  let full = "", spoken = 0;
+  ttsReset();
+  abortCtrl = new AbortController();
+
+  try {
+    // フォールバックチェーン: カスタムモデル → 2.5-flash → 2.5-flash-lite → 2.0-flash → 2.0-flash-lite
+    // 各モデルで「検索あり→検索なし」の順に試す(無料枠の上限や不調時に自動で次へ)
+    const chain = Array.from(new Set([store.gmodel || "gemini-2.5-flash"].concat(GEMINI_CHAIN)));
+    const attempts = [];
+    for (const mm of chain) {
+      if (store.search) attempts.push({ model: mm, tools: true });
+      attempts.push({ model: mm, tools: false });
+    }
+    let res = null, lastErr = null, cfg = null;
+    for (const at of attempts.slice(0, 8)) {
+      const body = {
+        system_instruction: { parts: [{ text: sysPromptNow() }] },
+        contents: history.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+        generationConfig: { maxOutputTokens: 1024 },
+      };
+      if (at.tools) body.tools = [{ google_search: {} }];
+      cfg = {
+        url: "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(at.model)
+             + ":streamGenerateContent?alt=sse&key=" + encodeURIComponent(store.gkey),
+        headers: { "content-type": "application/json" },
+        body,
+        extract: brainConfig().extract,
+      };
+      try {
+        res = await fetch(cfg.url, { method: "POST", signal: abortCtrl.signal, headers: cfg.headers, body: JSON.stringify(cfg.body) });
+      } catch (e) { lastErr = e; continue; }
+      if (res.ok) break;
+      const errBody = await res.text();
+      let emsg = "APIエラー (" + res.status + ")";
+      if (res.status === 401 || res.status === 403) emsg = "APIキーが無効です。設定を確認してください。";
+      else if (res.status === 429) emsg = "無料枠の上限です。1分ほど待ってからお試しください。";
+      else { try { emsg += ": " + ((JSON.parse(errBody).error || {}).message || ""); } catch (e) {} }
+      lastErr = new Error(emsg);
+      const keyBad = res.status === 401 || res.status === 403 || /API key not valid|API_KEY_INVALID/i.test(errBody);
+      if (keyBad) { lastErr = new Error("APIキーが無効です。設定を確認してください。"); res = null; break; } // キー不正は即中断
+      res = null; // 400/404/429/5xx → 次の候補へ
+    }
+    if (!res) throw (lastErr || new Error("接続できませんでした"));
+
+    setState(S.SPEAKING);
+    startBargeIn();
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        let ev;
+        try { ev = JSON.parse(payload); } catch(e) { continue; }
+        const delta = cfg.extract(ev);
+        if (delta) {
+          full += delta;
+          aiDiv.childNodes[1].textContent = full;
+          logEl.scrollTop = logEl.scrollHeight;
+          // 文単位でTTSに送る
+          const m = findSentenceEnd(full, spoken);
+          if (m > spoken) { ttsEnqueue(full.slice(spoken, m)); spoken = m; }
+        }
+      }
+    }
+    if (full.slice(spoken).trim()) ttsEnqueue(full.slice(spoken));
+    lastResponseText = full;
+    history.push({ role: "assistant", content: full || "…" });
+    ttsFinish(() => afterResponse());
+  } catch (err) {
+    if (err.name === "AbortError") { setState(S.IDLE); return; }
+    aiDiv.remove();
+    history.pop();
+    addMsg("sys", "⚠ " + err.message);
+    toast(err.message, 5000);
+    setState(sessionOn ? S.LISTENING : S.IDLE);
+    if (sessionOn) scheduleRelisten(600);
+  }
+}
+function findSentenceEnd(text, from) {
+  // from以降で最後に現れる文末位置(次の文字位置)を返す
+  const enders = /[。！？!?\n]/g;
+  enders.lastIndex = from;
+  let last = from, m;
+  while ((m = enders.exec(text)) !== null) last = m.index + 1;
+  // 文末が見つからなくても、長すぎる場合は読点で区切る
+  if (last === from && text.length - from > 80) {
+    const commas = /[、,]/g; commas.lastIndex = from;
+    let lc = from;
+    while ((m = commas.exec(text)) !== null) lc = m.index + 1;
+    if (lc > from) return lc;
+  }
+  return last;
+}
+function afterResponse() {
+  if (!sessionOn) { setState(S.IDLE); return; }
+  if ($("handsFree").checked) {
+    setState(S.LISTENING);
+    scheduleRelisten(250);
+  } else {
+    setState(S.IDLE, "マイクボタンで次の発話へ");
+    sessionOn = false; updateMicUI();
+  }
+}
+
+/* ---------------- TTS(VOICEVOX / フォールバック) ---------------- */
+let ttsQueue = [];        // {text} → 合成 → {buffer}
+let ttsPlaying = false;
+let ttsDoneCb = null;
+let ttsGen = 0;           // 世代(リセットで無効化)
+
+function ttsReset() {
+  ttsGen++;
+  ttsQueue = [];
+  ttsPlaying = false;
+  ttsDoneCb = null;
+  try { window.speechSynthesis.cancel(); } catch(e){}
+  if (currentSource) { try { currentSource.stop(); } catch(e){} currentSource = null; }
+}
+function ttsEnqueue(text) {
+  const t = text.trim();
+  if (!t) return;
+  const gen = ttsGen;
+  const item = { text: t, promise: vvOk ? vvSynth(t).catch(() => null) : Promise.resolve(null) };
+  ttsQueue.push(item);
+  if (!ttsPlaying) ttsPlayLoop(gen);
+}
+function ttsFinish(cb) {
+  if (!ttsPlaying && ttsQueue.length === 0) { cb(); return; }
+  ttsDoneCb = cb;
+}
+async function ttsPlayLoop(gen) {
+  ttsPlaying = true;
+  while (ttsQueue.length > 0) {
+    if (gen !== ttsGen) return;
+    const item = ttsQueue.shift();
+    const buf = await item.promise;
+    if (gen !== ttsGen) return;
+    if (buf) await playWav(buf, gen);
+    else await speakFallback(item.text, gen);
+  }
+  ttsPlaying = false;
+  if (ttsDoneCb && gen === ttsGen) { const cb = ttsDoneCb; ttsDoneCb = null; cb(); }
+}
+async function vvSynth(text) {
+  const sp = store.speaker;
+  const q = await fetch(VV_URL + "/audio_query?text=" + encodeURIComponent(text) + "&speaker=" + sp, { method: "POST" });
+  if (!q.ok) throw new Error("vv query failed");
+  const query = await q.json();
+  query.speedScale = store.rate;
+  query.pitchScale = store.pitch;
+  query.intonationScale = store.into;
+  const s = await fetch(VV_URL + "/synthesis?speaker=" + sp, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(query),
+  });
+  if (!s.ok) throw new Error("vv synth failed");
+  return await s.arrayBuffer();
+}
+let currentSource = null;
+function playWav(arrayBuffer, gen) {
+  return new Promise(async (resolve) => {
+    try {
+      ensureAudio();
+      const audioBuf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+      if (gen !== ttsGen) { resolve(); return; }
+      const src = audioCtx.createBufferSource();
+      src.buffer = audioBuf;
+      src.connect(analyser);
+      currentSource = src;
+      src.onended = () => { currentSource = null; resolve(); };
+      src.start();
+    } catch (e) { resolve(); }
+  });
+}
+function speakFallback(text, gen) {
+  return new Promise((resolve) => {
+    if (!window.speechSynthesis) { resolve(); return; }
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "ja-JP";
+    u.rate = store.rate;
+    u.pitch = Math.max(0.5, Math.min(1.5, 1 + store.pitch * 4)); // 「声の高さ」をiPhone内蔵音声にも反映
+    const vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith("ja"));
+    if (vs.length) u.voice = vs.find(v => /Google|Kyoko|Nanami|Ichiro/i.test(v.name)) || vs[0];
+    u.onend = () => resolve();
+    u.onerror = () => resolve();
+    speechSynthesis.speak(u);
+    // 保険: 長すぎる場合のタイムアウト
+    setTimeout(() => { if (gen !== ttsGen) { try{speechSynthesis.cancel();}catch(e){} resolve(); } }, 60000);
+  });
+}
+function speakSystem(text) {
+  addMsg("ai", text);
+  ttsReset();
+  ttsEnqueue(text);
+  ttsFinish(() => {
+    if (sessionOn && state !== S.SLEEPING) { setState(S.LISTENING); scheduleRelisten(200); }
+    else if (state === S.SLEEPING) scheduleRelisten(200);
+  });
+}
+
+/* ---------------- VOICEVOX 接続確認 ---------------- */
+async function checkVoicevox() {
+  try {
+    const r = await fetch(VV_URL + "/speakers", { signal: AbortSignal.timeout(2500) });
+    if (!r.ok) throw new Error();
+    const speakers = await r.json();
+    vvOk = true;
+    $("vvLamp").classList.add("ok");
+    $("vvText").textContent = "VOICEVOX 接続済み";
+    const sel = $("vvSpeaker");
+    sel.innerHTML = "";
+    for (const sp of speakers) {
+      for (const st of sp.styles) {
+        const o = document.createElement("option");
+        o.value = st.id;
+        o.textContent = sp.name + "(" + st.name + ")";
+        sel.appendChild(o);
+      }
+    }
+    sel.value = store.speaker;
+    if (!sel.value) { sel.selectedIndex = 0; store.speaker = sel.value; }
+  } catch (e) {
+    vvOk = false;
+    $("vvLamp").classList.remove("ok");
+    $("vvText").textContent = "VOICEVOX未接続(ブラウザ標準音声で代用中)";
+  }
+}
+setInterval(checkVoicevox, 15000);
+
+/* ---------------- OpenAI Realtime エンジン ---------------- */
+let rt = { pc: null, dc: null, micStream: null, audioEl: null, on: false, userDiv: null, aiDiv: null, aiText: "" };
+
+async function startRealtimeSession(opts = {}) {
+  if (!store.okey) {
+    addMsg("sys", "OpenAI APIキーが未設定です。「⚙ 設定」から設定してください。");
+    openSettings();
+    return;
+  }
+  ensureAudio();
+  setState(S.THINKING, "リアルタイム接続中…");
+  try {
+    rt.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    toast("マイクの使用が許可されていません。", 5000);
+    setState(S.IDLE);
+    return;
+  }
+  const pc = new RTCPeerConnection();
+  rt.pc = pc;
+  pc.addTrack(rt.micStream.getTracks()[0], rt.micStream);
+
+  // 返答音声の再生 + ビジュアライザー接続
+  rt.audioEl = new Audio();
+  rt.audioEl.autoplay = true;
+  pc.ontrack = (ev) => {
+    rt.audioEl.srcObject = ev.streams[0];
+    try {
+      // ビジュアライザー用(音はAudio要素側で再生するため、こちらは無音で解析のみ)
+      const src = audioCtx.createMediaStreamSource(ev.streams[0]);
+      const mute = audioCtx.createGain();
+      mute.gain.value = 0;
+      src.connect(analyser);
+      analyser.disconnect();
+      analyser.connect(mute);
+      mute.connect(audioCtx.destination);
+    } catch (e) {}
+  };
+
+  const dc = pc.createDataChannel("oai-events");
+  rt.dc = dc;
+  dc.onopen = () => {
+    dc.send(JSON.stringify({
+      type: "session.update",
+      session: {
+        type: "realtime",
+        instructions: store.sys + "\nユーザーの呼び名: " + store.name + "\n必ず日本語で応答してください。",
+        audio: {
+          input: { transcription: { model: "gpt-4o-mini-transcribe", language: "ja" } },
+          output: { voice: store.ovoice },
+        },
+      },
+    }));
+    rt.on = true;
+    sessionOn = true; updateMicUI();
+    setState(S.LISTENING, "接続完了。どうぞお話しください(割り込みもできます)");
+    if (opts.greet) {
+      dc.send(JSON.stringify({
+        type: "response.create",
+        response: { instructions: "呼び出しに応え、短く一言、ベイマックスらしく穏やかに日本語で応答してください(例:『はい、タカ様。どうしましたか。』)。" },
+      }));
+    }
+  };
+  dc.onmessage = (ev) => {
+    let e; try { e = JSON.parse(ev.data); } catch (x) { return; }
+    handleRtEvent(e);
+  };
+  dc.onclose = () => { if (rt.on) stopRealtimeSession(); };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  const model = store.omodel || "gpt-realtime-2.1";
+  let resp;
+  try {
+    resp = await fetch("https://api.openai.com/v1/realtime/calls?model=" + encodeURIComponent(model), {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + store.okey, "Content-Type": "application/sdp" },
+      body: offer.sdp,
+    });
+    if (!resp.ok) {
+      // 旧エンドポイントへフォールバック
+      resp = await fetch("https://api.openai.com/v1/realtime?model=" + encodeURIComponent(model), {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + store.okey, "Content-Type": "application/sdp" },
+        body: offer.sdp,
+      });
+    }
+    if (!resp.ok) throw new Error("接続失敗 (" + resp.status + ") — APIキー・残高・モデルIDを確認してください");
+    const answer = await resp.text();
+    await pc.setRemoteDescription({ type: "answer", sdp: answer });
+  } catch (err) {
+    addMsg("sys", "⚠ リアルタイム接続エラー: " + err.message);
+    toast(err.message, 6000);
+    stopRealtimeSession();
+  }
+}
+function handleRtEvent(e) {
+  const t = e.type || "";
+  if (t === "conversation.item.input_audio_transcription.completed") {
+    const tr = (e.transcript || "").trim();
+    if (tr) {
+      addMsg("user", tr);
+      // 音声コマンドで会話終了
+      if (/(もう大丈夫|会話(を)?終了|これで(終了|終わり|おわり)|終了して|じゃあね|またね|おやすみ)/.test(tr) && tr.length <= 25) {
+        rt.endAfterResponse = true;
+      }
+    }
+  } else if (t === "response.created") {
+    setState(S.SPEAKING, "応答中(話しかけると割り込めます)");
+    rt.aiText = ""; rt.aiDiv = null;
+  } else if (t === "response.output_audio_transcript.delta" || t === "response.audio_transcript.delta") {
+    if (!rt.aiDiv) rt.aiDiv = addMsg("ai", "");
+    rt.aiText += e.delta || "";
+    rt.aiDiv.childNodes[1].textContent = rt.aiText;
+    logEl.scrollTop = logEl.scrollHeight;
+  } else if (t === "response.done") {
+    if (rt.endAfterResponse) {
+      rt.endAfterResponse = false;
+      // 返答の読み上げが終わるのを少し待ってから切断
+      setTimeout(() => endConversation(), 2500);
+      return;
+    }
+    setState(S.LISTENING, "どうぞお話しください(割り込みもできます)");
+  } else if (t === "error") {
+    const m = (e.error && e.error.message) || "リアルタイムAPIエラー";
+    addMsg("sys", "⚠ " + m);
+  }
+}
+function stopRealtimeSession() {
+  rt.on = false;
+  try { rt.dc && rt.dc.close(); } catch (e) {}
+  try { rt.pc && rt.pc.close(); } catch (e) {}
+  if (rt.micStream) rt.micStream.getTracks().forEach(tr => tr.stop());
+  if (rt.audioEl) { try { rt.audioEl.srcObject = null; } catch (e) {} }
+  rt.pc = null; rt.dc = null; rt.micStream = null;
+  // ビジュアライザー経路を通常再生(VOICEVOX)用に戻す
+  if (analyser && audioCtx) {
+    try { analyser.disconnect(); analyser.connect(audioCtx.destination); } catch (e) {}
+  }
+  sessionOn = false; updateMicUI();
+  setState(S.IDLE);
+}
+function rtSendText(text) {
+  if (!rt.on || !rt.dc || rt.dc.readyState !== "open") { toast("先に🎙ボタンで接続してください。"); return; }
+  addMsg("user", text);
+  rt.dc.send(JSON.stringify({
+    type: "conversation.item.create",
+    item: { type: "message", role: "user", content: [{ type: "input_text", text }] },
+  }));
+  rt.dc.send(JSON.stringify({ type: "response.create" }));
+}
+
+/* ---------------- セッション制御 ---------------- */
+function updateMicUI() {
+  $("micBtn").classList.toggle("on", sessionOn);
+  $("micBtn").textContent = sessionOn ? "⏸" : "🎙";
+}
+function startSession() {
+  if (store.engine === "realtime") { startRealtimeSession(); return; }
+  if (!SR) { toast("このブラウザは音声認識に未対応です。PC版Chromeをご利用ください。", 5000); return; }
+  ensureAudio();
+  sessionOn = true;
+  updateMicUI();
+  startRecognition();
+}
+function stopSession() {
+  if (store.engine === "realtime" || rt.on) { stopRealtimeSession(); return; }
+  sessionOn = false;
+  updateMicUI();
+  stopRecognition();
+  if (abortCtrl) { try { abortCtrl.abort(); } catch(e){} }
+  ttsReset();
+  setState(S.IDLE);
+}
+$("micBtn").addEventListener("click", () => sessionOn ? stopSession() : startSession());
+
+/* ---------------- テキスト入力 ---------------- */
+function sendText() {
+  const v = $("textInput").value.trim();
+  if (!v) return;
+  $("textInput").value = "";
+  ensureAudio();
+  stopRecognition();
+  handleUtterance(v); // 終了フレーズ・ローカルハンドラも通す
+}
+$("sendBtn").addEventListener("click", sendText);
+$("textInput").addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing) sendText(); });
+
+$("clearBtn").addEventListener("click", () => {
+  history = [];
+  logEl.innerHTML = "";
+  addMsg("sys", "会話履歴をリセットしました。");
+});
+
+/* ---------------- 設定UI ---------------- */
+function openSettings() { $("settings").classList.add("open"); }
+$("settingsBtn").addEventListener("click", openSettings);
+$("closeSettings").addEventListener("click", () => $("settings").classList.remove("open"));
+function updateEngineUI() {}
+$("rate").addEventListener("input", () => $("rateVal").textContent = $("rate").value);
+$("pitch").addEventListener("input", () => $("pitchVal").textContent = $("pitch").value);
+$("into").addEventListener("input", () => $("intoVal").textContent = $("into").value);
+
+$("memClear").addEventListener("click", () => {
+  store.profile = [];
+  $("memCount").textContent = "0";
+  toast("記憶をリセットしました。");
+});
+
+/* ベイマックス声プリセット */
+$("baymaxVoiceBtn").addEventListener("click", () => {
+  ensureAudio();
+  // VOICEVOX側: 低く穏やかな話者を名前で探す(接続済みのとき)
+  const sel = $("vvSpeaker");
+  let found = null;
+  for (const name of ["雀松朱司", "麒ヶ島宗麟", "青山龍星"]) {
+    found = Array.from(sel.options).find(o => o.textContent.includes(name) && o.textContent.includes("ノーマル"))
+         || Array.from(sel.options).find(o => o.textContent.includes(name));
+    if (found) break;
+  }
+  if (found) { sel.value = found.value; store.speaker = found.value; }
+  // 前作PC版のチューニング結果を反映: やや高め・ゆっくりが「ベイマックスらしい」
+  $("rate").value = "0.95"; $("rateVal").textContent = "0.95"; store.rate = 0.95;
+  $("pitch").value = "0.02"; $("pitchVal").textContent = "0.02"; store.pitch = 0.02;
+  $("into").value = "0.6"; $("intoVal").textContent = "0.6"; store.into = 0.6;
+  // リアルタイム側: cedar(低く落ち着いた声)
+  if (vvOk) {
+    ttsReset();
+    ttsEnqueue("こんにちは。私はベイマックス。あなたの健康を守ります。");
+    ttsFinish(() => {});
+    toast("ベイマックスの声に調整しました" + (found ? "(" + found.textContent + ")" : ""));
+  } else {
+    ttsReset();
+    ttsEnqueue("こんにちは。私はベイマックス。あなたの健康を守ります。");
+    ttsFinish(() => {});
+    toast("ベイマックスの声に調整しました(低め・ゆっくり)");
+  }
+});
+$("saveSettings").addEventListener("click", () => {
+  store.gkey = $("gKey").value.trim();
+  store.gmodel = $("gModel").value.trim() || "gemini-2.5-flash";
+  store.search = $("searchOn").checked;
+  store.bargein = $("bargeinOn").checked;
+  store.name = $("userName").value.trim() || "ご主人様";
+  store.sys = $("sysPrompt").value.trim() || DEFAULT_SYS;
+  if ($("vvSpeaker").value) store.speaker = $("vvSpeaker").value;
+  store.rate = parseFloat($("rate").value);
+  store.pitch = parseFloat($("pitch").value);
+  store.into = parseFloat($("into").value);
+  $("settings").classList.remove("open");
+  toast("設定を保存しました。");
+});
+$("testVoice").addEventListener("click", () => {
+  ensureAudio();
+  if ($("vvSpeaker").value) store.speaker = $("vvSpeaker").value;
+  store.rate = parseFloat($("rate").value);
+  ttsReset();
+  ttsEnqueue("こんにちは。ベイマックスです。音声のテストをしています。");
+  ttsFinish(() => {});
+});
+
+/* ---------------- イヤホン待機(Media Session)・ポケットモード ---------------- */
+const SILENT_WAV = "data:audio/wav;base64,UklGRqQlAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YYAlAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+let keepAlive = null, standbyOn = false, wakeLock = null, lastSummon = 0;
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || "ontouchstart" in window;
+if (isMobile) $("mobileExtras").style.display = "flex";
+
+async function requestWakeLock() {
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && standbyOn) {
+    requestWakeLock();
+    if (keepAlive) keepAlive.play().catch(() => {});
+  }
+});
+
+function setMediaState(statusStr) {
+  if (!("mediaSession" in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: "BAYMAX",
+      artist: statusStr,
+      album: "AI Assistant",
+      artwork: [{ src: "icon-512.png", sizes: "512x512", type: "image/png" }],
+    });
+    navigator.mediaSession.playbackState = "playing";
+  } catch (e) {}
+}
+
+function chime(freq, dur, when) {
+  ensureAudio();
+  const t0 = audioCtx.currentTime + (when || 0);
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = "sine"; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+
+async function startStandby(opts = {}) {
+  ensureAudio();
+  const missingKey = store.engine === "realtime" ? (store.okey ? null : "OpenAI APIキー") : brainKeyMissing();
+  if (missingKey) {
+    addMsg("sys", "先に「⚙ 設定」で" + missingKey + "を設定してください。");
+    openSettings();
+    return "nokey";
+  }
+  if (!keepAlive) { keepAlive = new Audio(SILENT_WAV); keepAlive.loop = true; keepAlive.volume = 1.0; }
+  try { await keepAlive.play(); } catch (e) { if (!opts.auto) toast("もう一度ボタンをタップしてください(再生許可)。"); return "blocked"; }
+  standbyOn = true;
+  $("standbyBtn").textContent = "🎧 待機中(タップで解除)";
+  setMediaState("待機中 — イヤホンのボタンで呼び出し");
+  requestWakeLock();
+  if ("mediaSession" in navigator) {
+    const toggle = () => { if (keepAlive) keepAlive.play().catch(() => {}); summonToggle(); };
+    for (const a of ["play", "pause", "nexttrack", "previoustrack"]) {
+      try { navigator.mediaSession.setActionHandler(a, toggle); } catch (e) {}
+    }
+  }
+  localStorage.setItem("jv_standby", "1");
+  addMsg("sys", "イヤホン待機を開始しました。イヤホンの再生/停止ボタン(AirPodsは軸をつまむ)でベイマックスを呼び出せます。会話中に「もう大丈夫だよ」と言うか、もう一度ボタンを押すと待機に戻ります。");
+  if (!opts.silent) { chime(523, 0.12, 0); chime(659, 0.14, 0.14); }
+  return "ok";
+}
+function stopStandby() {
+  localStorage.setItem("jv_standby", "0");
+  standbyOn = false;
+  $("standbyBtn").textContent = "🎧 イヤホン待機を開始";
+  if (keepAlive) { try { keepAlive.pause(); } catch (e) {} }
+  if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  if (sessionOn || rt.on) stopSession();
+}
+function summonToggle() {
+  const now = Date.now();
+  if (now - lastSummon < 1500) return; // 二重発火・連打ガード
+  lastSummon = now;
+  if (sessionOn || rt.on) endConversation();
+  else summon();
+}
+function summon() {
+  chime(523, 0.12, 0); chime(784, 0.14, 0.12);
+  setMediaState("会話中");
+  if (store.engine === "realtime") startRealtimeSession({ greet: true });
+  else { sessionOn = true; updateMicUI(); ensureAudio(); startRecognition(); }
+}
+function endConversation() {
+  stopSession();
+  chime(784, 0.12, 0); chime(523, 0.14, 0.12);
+  if (standbyOn && keepAlive) {
+    keepAlive.play().catch(() => {});
+    setMediaState("待機中 — イヤホンのボタンで呼び出し");
+    setState(S.IDLE, "待機中 — イヤホンのボタンで呼び出し");
+  }
+}
+$("standbyBtn").addEventListener("click", () => standbyOn ? stopStandby() : startStandby());
+
+/* ポケットモード */
+const pocket = $("pocket");
+let lastTap = 0;
+$("pocketBtn").addEventListener("click", () => {
+  pocket.classList.add("on");
+  requestWakeLock();
+});
+pocket.addEventListener("click", () => {
+  const now = Date.now();
+  if (now - lastTap < 400) pocket.classList.remove("on");
+  lastTap = now;
+});
+
+/* ---------------- 自動待機・自動召喚(Siriショートカット連携) ---------------- */
+const urlParams = new URLSearchParams(location.search);
+const wantSummon = urlParams.get("summon") === "1";
+const wantAutoStandby = wantSummon || localStorage.getItem("jv_standby") === "1";
+
+function showArm(summonAfter) {
+  const ov = $("armOverlay");
+  $("armText").textContent = summonAfter ? "タップして会話開始" : "タップして待機開始";
+  ov.style.display = "flex";
+  ov.onclick = async () => {
+    ov.style.display = "none";
+    const r = await startStandby({});
+    if (r === "ok" && summonAfter) summon();
+  };
+}
+(async () => {
+  if (!isMobile || !wantAutoStandby) return;
+  const r = await startStandby({ auto: true, silent: !wantSummon });
+  if (r === "blocked") showArm(wantSummon);
+  else if (r === "ok" && wantSummon) summon();
+})();
+
+/* Service Worker 登録(https配信時のみ) */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+
+/* ---------------- 初期化 ---------------- */
+function initSettingsUI() {
+  $("gKey").value = store.gkey;
+  $("gModel").value = store.gmodel === "gemini-2.5-flash" ? "" : store.gmodel;
+  $("searchOn").checked = store.search;
+  $("bargeinOn").checked = store.bargein;
+  $("memCount").textContent = store.profile.length;
+  updateEngineUI();
+  $("userName").value = store.name;
+  $("sysPrompt").value = store.sys;
+  $("rate").value = store.rate; $("rateVal").textContent = store.rate;
+  $("pitch").value = store.pitch; $("pitchVal").textContent = store.pitch;
+  $("into").value = store.into; $("intoVal").textContent = store.into;
+}
+initSettingsUI();
+checkVoicevox();
+addMsg("sys", "ようこそ。マイクボタンを押すか、テキストで話しかけてください。");
+if (brainKeyMissing()) {
+  addMsg("sys", "初回セットアップ: 右上の「⚙ 設定」からGemini APIキー(無料・カード不要)を設定してください。");
+}
+if (location.protocol === "file:") {
+  addMsg("sys", "⚠ file:// で開かれています。付属の起動スクリプト(start_baymax)経由で開くとVOICEVOX連携が安定します。");
+}
+</script>
+</body>
+</html>
