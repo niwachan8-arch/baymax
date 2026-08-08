@@ -109,7 +109,7 @@
 
   /* ---- settings drawer ---- */
   #settings {
-    position: fixed; top: 0; right: -420px; width: 400px; max-width: 94vw; height: 100%;
+    position: fixed; top: 0; right: -420px; width: 400px; max-width: 94vw; height: 100%; height: 100dvh;
     background: linear-gradient(180deg, var(--panel2), var(--panel));
     border-left: 1px solid rgba(255,122,110,.25); z-index: 50;
     transition: right .28s ease; display: flex; flex-direction: column;
@@ -118,7 +118,10 @@
   #settings.open { right: 0; }
   #settings .shead { display:flex; justify-content:space-between; align-items:center; padding: 16px 18px; border-bottom: 1px solid rgba(255,122,110,.15); }
   #settings .shead h2 { font-size: 14px; letter-spacing: .2em; color: var(--cyan); }
-  #settings .sbody { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  #settings .sbody {
+    padding: 16px 18px 60px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px;
+    flex: 1 1 auto; min-height: 0; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  }
   .field label { display:block; font-size: 11.5px; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
   .field input, .field select, .field textarea {
     width: 100%; background: rgba(6,11,20,.7); border: 1px solid rgba(255,122,110,.22);
@@ -140,7 +143,8 @@
   }
   #toast.show { transform: translateX(-50%) translateY(0); }
   @media (max-width: 760px) {
-    main { flex-direction: column; }
+    main { flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    #chatCol { flex: 1 0 auto; min-height: 40vh; }
     #stage { flex: 0 0 auto; padding: 8px; gap: 10px; }
     #orbWrap { width: 130px; }
     #chatCol { border-left: none; border-top: 1px solid rgba(255,122,110,.1); }
@@ -207,7 +211,6 @@
     <button id="closeSettings">✕ 閉じる</button>
   </div>
   <div class="sbody">
-    </div>
     <div class="field" id="fGeminiKey">
       <label>Gemini APIキー(無料)</label>
       <input type="password" id="gKey" placeholder="AIza...">
@@ -1177,7 +1180,11 @@ $("clearBtn").addEventListener("click", () => {
 /* ---------------- 設定UI ---------------- */
 function openSettings() { $("settings").classList.add("open"); }
 $("settingsBtn").addEventListener("click", openSettings);
-$("closeSettings").addEventListener("click", () => $("settings").classList.remove("open"));
+$("closeSettings").addEventListener("click", () => {
+  applySettings(); // 閉じるだけでも自動保存(スマホで保存ボタンまで届かない事故の防止)
+  $("settings").classList.remove("open");
+  toast("設定を保存しました。");
+});
 function updateEngineUI() {}
 $("rate").addEventListener("input", () => $("rateVal").textContent = $("rate").value);
 $("pitch").addEventListener("input", () => $("pitchVal").textContent = $("pitch").value);
@@ -1218,7 +1225,7 @@ $("baymaxVoiceBtn").addEventListener("click", () => {
     toast("ベイマックスの声に調整しました(低め・ゆっくり)");
   }
 });
-$("saveSettings").addEventListener("click", () => {
+function applySettings() {
   store.gkey = $("gKey").value.trim();
   store.gmodel = $("gModel").value.trim() || "gemini-2.5-flash";
   store.search = $("searchOn").checked;
@@ -1229,9 +1236,15 @@ $("saveSettings").addEventListener("click", () => {
   store.rate = parseFloat($("rate").value);
   store.pitch = parseFloat($("pitch").value);
   store.into = parseFloat($("into").value);
+}
+$("saveSettings").addEventListener("click", () => {
+  applySettings();
   $("settings").classList.remove("open");
   toast("設定を保存しました。");
 });
+// APIキーは入力した瞬間に自動保存(保存ボタンの押し忘れ対策)
+$("gKey").addEventListener("input", () => { store.gkey = $("gKey").value.trim(); });
+$("gKey").addEventListener("change", () => { store.gkey = $("gKey").value.trim(); });
 $("testVoice").addEventListener("click", () => {
   ensureAudio();
   if ($("vvSpeaker").value) store.speaker = $("vvSpeaker").value;
@@ -1373,6 +1386,11 @@ function showArm(summonAfter) {
   if (r === "blocked") showArm(wantSummon);
   else if (r === "ok" && wantSummon) summon();
 })();
+
+/* iOSにストレージの永続保護を要求(長期間未使用時のデータ削除対策) */
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {});
+}
 
 /* Service Worker 登録(https配信時のみ) */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
